@@ -908,6 +908,14 @@ function AdminPanel({ onBack }) {
                     <button onClick={()=>{setConfirmId(dept.id);setConfirmType("dept");}} style={{ background:"#fef2f2", border:"1px solid #fecaca", borderRadius:8, padding:"5px 9px", cursor:"pointer", fontSize:13, flexShrink:0 }}>🗑️</button>
                   </div>
                 ))}
+                <div onClick={()=>setModal({mode:"add",type:"dept"})}
+                  style={{ border:"2px dashed #22c55e", borderRadius:14, padding:"16px 18px", display:"flex", alignItems:"center", justifyContent:"center", gap:12, cursor:"pointer", background:"transparent", transition:"background 0.15s" }}
+                  onMouseEnter={e=>e.currentTarget.style.background="#f0fdf4"}
+                  onMouseLeave={e=>e.currentTarget.style.background="transparent"}
+                >
+                  <div style={{ width:36, height:36, borderRadius:10, background:"#dcfce7", display:"flex", alignItems:"center", justifyContent:"center", fontSize:22, color:"#16a34a", fontWeight:700, flexShrink:0 }}>+</div>
+                  <span style={{ fontWeight:600, fontSize:14, color:"#16a34a" }}>Novo Departamento</span>
+                </div>
               </div>
             )
           )

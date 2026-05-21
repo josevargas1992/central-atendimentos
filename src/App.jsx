@@ -240,7 +240,7 @@ function TipoBadge({ tipo, tipoObj }) {
   return <span style={{ background:c.bg, color:c.text, padding:"3px 9px", borderRadius:20, fontSize:11, fontWeight:600, whiteSpace:"nowrap", display:"inline-block" }}>{tipo}</span>;
 }
 function ViaBadge({ via }) {
-  const map = { Ticket:["🎫","#6366f1"], WhatsApp:["💬","#22c55e"], Telefone:["📞","#0ea5e9"] };
+  const map = { Ticket:["🎫","#6366f1"], WhatsApp:["💬","#22c55e"], Telefone:["📞","#0ea5e9"], Telegram:["✈️","#229ED9"] };
   const [icon, color] = map[via] || ["📋","#64748b"];
   return <span style={{ display:"inline-flex", alignItems:"center", gap:5, fontSize:12.5, color, fontWeight:500 }}><span>{icon}</span>{via}</span>;
 }
@@ -1093,7 +1093,7 @@ function RecordModal({ record, employees, tipos=[], pageDepartment="Geral", page
         </Field>
         <Field label="Via">
           <select value={f.via} onChange={e=>setF(p=>({...p, via:e.target.value, contato:""}))} style={sel}>
-            {["Ticket","WhatsApp","Telefone"].map(o=><option key={o}>{o}</option>)}
+            {["Ticket","WhatsApp","Telefone","Telegram"].map(o=><option key={o}>{o}</option>)}
           </select>
         </Field>
       </div>
@@ -1106,9 +1106,11 @@ function RecordModal({ record, employees, tipos=[], pageDepartment="Geral", page
             }
           </select>
         </Field>
-        <Field label={f.via === "Ticket" ? "Link / URL" : "Telefone"}>
+        <Field label={f.via === "Ticket" ? "Link / URL" : f.via === "Telegram" ? "Nome no Telegram" : "Telefone"}>
           {f.via === "Ticket" ? (
             <input value={f.contato} onChange={e=>set("contato")(e.target.value)} style={inp} placeholder="https://..." />
+          ) : f.via === "Telegram" ? (
+            <input value={f.contato} onChange={e=>set("contato")(e.target.value)} style={inp} placeholder="Nome da pessoa no Telegram" />
           ) : (
             <input
               value={f.contato}

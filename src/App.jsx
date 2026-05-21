@@ -1592,9 +1592,9 @@ export default function App() {
       return now.getHours() > WORK_END.hour || (now.getHours() === WORK_END.hour && now.getMinutes() >= WORK_END.minute);
     };
 
-    const update = status => setDoc(ref, { uid: user.id, status }).catch(() => {});
+    const update = status => setDoc(ref, { uid: user.id, status }, { merge: false }).catch(() => {});
 
-    // Status inicial
+    // Status inicial — escreve imediatamente ao logar
     update(isAfterWork() ? "away" : "online");
 
     // Visibilidade da aba (minimizar / trocar de aba)
@@ -1626,7 +1626,7 @@ export default function App() {
   return (
     <ThemeCtx.Provider value={{ t, dark, toggle }}>
       {view === "admin" && <AdminPanel onBack={() => setView("login")} />}
-      {view === "login" && <LoginScreen onLogin={u=>{setDoc(doc(db,"presence",u.id),{uid:u.id}).catch(()=>{}); setUser(u);setView("home");}} onAdmin={()=>setView("admin")} />}
+      {view === "login" && <LoginScreen onLogin={u=>{setUser(u);setView("home");}} onAdmin={()=>setView("admin")} />}
       {view === "page" && openPage && <PageDetail page={openPage} initEmployees={openEmps} user={user} onBack={goHome} onLogout={logout} />}
       {view === "home" && user && <HomeScreen user={user} onOpenPage={goPage} onLogout={logout} />}
     </ThemeCtx.Provider>

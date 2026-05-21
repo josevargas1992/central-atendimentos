@@ -1129,6 +1129,49 @@ function RecordModal({ record, employees, tipos=[], pageDepartment="Geral", page
   );
 }
 
+// ── Presence Bar ─────────────────────────────────────────────────────
+
+function PresenceBar({ employees }) {
+  const { t } = useTheme();
+  const [open,   setOpen]   = useState(false);
+  const [online, setOnline] = useState(new Set());
+
+  useEffect(() => {
+    const unsub = onSnapshot(collection(db, "presence"), snap => {
+      setOnline(new Set(snap.docs.map(d => d.id)));
+    });
+    return () => unsub();
+  }, []);
+
+  const sorted = [...employees].sort((a, b) => (online.has(a.id) ? 0 : 1) - (online.has(b.id) ? 0 : 1));
+  const onlineCount = employees.filter(e => online.has(e.id)).length;
+
+  return (
+    <div style={{ background:t.card, border:`1px solid ${t.border}`, borderRadius:14, marginBottom:18, overflow:"hidden" }}>
+      <div onClick={()=>setOpen(v=>!v)} style={{ padding:"12px 18px", cursor:"pointer", display:"flex", alignItems:"center", justifyContent:"space-between", userSelect:"none" }}>
+        <div style={{ display:"flex", alignItems:"center", gap:10 }}>
+          <span style={{ fontSize:14, fontWeight:700, color:t.text }}>👥 Equipe</span>
+          {onlineCount > 0 && <span style={{ background:"#dcfce7", color:"#16a34a", fontSize:11, fontWeight:700, padding:"2px 8px", borderRadius:20 }}>{onlineCount} online</span>}
+        </div>
+        <span style={{ color:t.textMuted, fontSize:11 }}>{open ? "▲" : "▼"}</span>
+      </div>
+      {open && (
+        <div style={{ padding:"0 18px 14px", display:"flex", flexWrap:"wrap", gap:8 }}>
+          {sorted.map(emp => (
+            <div key={emp.id} style={{ display:"flex", alignItems:"center", gap:8, background:t.pageBg, border:`1px solid ${t.border}`, borderRadius:10, padding:"7px 12px" }}>
+              <div style={{ position:"relative" }}>
+                <Avatar name={emp.name} color={emp.color} size={26} />
+                <div style={{ position:"absolute", bottom:0, right:0, width:9, height:9, borderRadius:"50%", background:online.has(emp.id)?"#22c55e":"#94a3b8", border:`2px solid ${t.card}` }} />
+              </div>
+              <span style={{ fontSize:13, fontWeight:500, color:t.text }}>{emp.name}</span>
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
 // ── Home Screen ───────────────────────────────────────────────────────
 
 function HomeScreen({ user, onOpenPage, onLogout }) {
@@ -1175,6 +1218,7 @@ function HomeScreen({ user, onOpenPage, onLogout }) {
       </div>
 
       <div style={{ padding:"24px 24px 48px" }}>
+        <PresenceBar employees={employees} />
         <div style={{ marginBottom:22 }}>
           <h2 style={{ margin:0, fontSize:20, fontWeight:800, color:t.text }}>Planilhas de Atendimento</h2>
           <p style={{ margin:"5px 0 0", fontSize:13, color:t.textMuted }}>
@@ -1519,14 +1563,22 @@ export default function App() {
 
   const t = dark ? THEMES.dark : THEMES.light;
 
-  const logout = () => { setUser(null); setView("login"); setOpenPage(null); };
+  const logout = () => { if (user) deleteDoc(doc(db,"presence",user.id)).catch(()=>{}); setUser(null); setView("login"); setOpenPage(null); };
+
+  useEffect(() => {
+    if (!user) return;
+    setDoc(doc(db,"presence",user.id),{uid:user.id}).catch(()=>{});
+    const bye = () => navigator.sendBeacon && navigator.sendBeacon("", "");
+    window.addEventListener("beforeunload", () => deleteDoc(doc(db,"presence",user.id)).catch(()=>{}));
+    return () => {};
+  }, [user?.id]);
   const goHome = () => { setOpenPage(null); setView("home"); };
   const goPage = (pg, emps) => { setOpenPage(pg); setOpenEmps(emps||[]); setView("page"); };
 
   return (
     <ThemeCtx.Provider value={{ t, dark, toggle }}>
       {view === "admin" && <AdminPanel onBack={() => setView("login")} />}
-      {view === "login" && <LoginScreen onLogin={u=>{setUser(u);setView("home");}} onAdmin={()=>setView("admin")} />}
+      {view === "login" && <LoginScreen onLogin={u=>{setDoc(doc(db,"presence",u.id),{uid:u.id}).catch(()=>{}); setUser(u);setView("home");}} onAdmin={()=>setView("admin")} />}
       {view === "page" && openPage && <PageDetail page={openPage} initEmployees={openEmps} user={user} onBack={goHome} onLogout={logout} />}
       {view === "home" && user && <HomeScreen user={user} onOpenPage={goPage} onLogout={logout} />}
     </ThemeCtx.Provider>

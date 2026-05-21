@@ -1269,7 +1269,8 @@ function PageDetail({ page, initEmployees, user, onBack, onLogout }) {
   const [tipos,     setTipos]     = useState([]);
   const [loading,   setLoading]   = useState(true);
   const [modal,     setModal]     = useState(null);
-  const [confirmId, setConfirmId] = useState(null);
+  const [confirmId,  setConfirmId]  = useState(null);
+  const [satPopup,   setSatPopup]   = useState(false);
   const [filters,   setFilters]   = useState({ search:"", status:"Todos", tipo:"Todos", via:"Todos", atendente:"Todos" });
 
   useEffect(() => {
@@ -1290,7 +1291,7 @@ function PageDetail({ page, initEmployees, user, onBack, onLogout }) {
   const editRecord = async f => { await setDoc(doc(db,"records",`${page.id}-${f.id}`), {...f, pageId:page.id}); setModal(null); };
   const delRecord  = async () => { await deleteDoc(doc(db,"records",`${page.id}-${confirmId}`)); setConfirmId(null); };
   const togglePrio = async id => { const r = records.find(x=>x.id===id); if(r) await setDoc(doc(db,"records",`${page.id}-${id}`), {...r, prioridade:!r.prioridade}); };
-  const resolveRecord = async r => { await setDoc(doc(db,"records",`${page.id}-${r.id}`), {...r, status:"Resolvido", pageId:page.id}); };
+  const resolveRecord = async r => { await setDoc(doc(db,"records",`${page.id}-${r.id}`), {...r, status:"Resolvido", pageId:page.id}); setSatPopup(true); };
   const setF = k => v => setFilters(p=>({...p,[k]:v}));
 
   const filtered = records.filter(r => {
@@ -1444,6 +1445,15 @@ function PageDetail({ page, initEmployees, user, onBack, onLogout }) {
 
       {modal && <RecordModal record={modal.mode==="edit"?modal.record:null} employees={employees} tipos={tipos} pageDepartment={page.department} pageMonth={page.month} pageYear={page.year} onSave={modal.mode==="edit"?editRecord:addRecord} onClose={()=>setModal(null)} currentUser={user} />}
       {confirmId!==null && <ConfirmDialog message="Este registro será excluído permanentemente." onConfirm={delRecord} onCancel={()=>setConfirmId(null)} />}
+      {satPopup && (
+        <Overlay z={1100}>
+          <div style={{ background:"#fff", borderRadius:20, padding:"32px 36px", maxWidth:360, width:"90%", textAlign:"center", boxShadow:"0 20px 50px rgba(0,0,0,0.25)", ...FF }}>
+            <div style={{ fontSize:42, marginBottom:14 }}>📋</div>
+            <p style={{ fontSize:16, fontWeight:600, color:"#1e293b", margin:"0 0 24px", lineHeight:1.5 }}>Você já enviou a pesquisa de satisfação?</p>
+            <button onClick={()=>setSatPopup(false)} style={{ padding:"11px 40px", background:"linear-gradient(135deg,#0ea5e9,#6366f1)", border:"none", borderRadius:10, color:"#fff", fontWeight:700, fontSize:15, cursor:"pointer", ...FF }}>OK</button>
+          </div>
+        </Overlay>
+      )}
     </div>
   );
 }

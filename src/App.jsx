@@ -4,7 +4,7 @@ import { db } from "./firebase";
 
 // ── Constants ─────────────────────────────────────────────────────────
 
-const ADMIN_CRED = { id:"admin", password:"admin123" };
+const ADMIN_CRED = { id:"admin", password:"462b525C" };
 
 const DEFAULT_EMPLOYEES = [
   { id:"gabriele",    name:"Gabriele",    password:"gabi123",    color:"#8b5cf6" },

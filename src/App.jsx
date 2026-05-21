@@ -821,6 +821,7 @@ function AdminPanel({ onBack }) {
       </div>
 
       <div style={{ padding:24 }}>
+        <PresenceBar employees={employees} />
         {loading ? <div style={{ textAlign:"center", padding:80, color:t.textMuted }}>Carregando...</div> : (
 
           tab === "planilhas" ? (
@@ -1333,6 +1334,7 @@ function PageDetail({ page, initEmployees, user, onBack, onLogout }) {
       </div>
 
       <div style={{ padding:"20px 24px 48px" }}>
+        <PresenceBar employees={employees} />
         <div style={{ display:"flex", gap:12, marginBottom:20, flexWrap:"wrap" }}>
           {stats.map(([l,v,c])=>(
             <div key={l} style={{ background:t.card, border:`1px solid ${t.border}`, borderRadius:14, padding:"12px 18px", minWidth:118 }}>

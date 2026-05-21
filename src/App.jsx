@@ -1600,24 +1600,32 @@ export default function App() {
     // Visibilidade da aba (minimizar / trocar de aba)
     const onVisibility = () => update(document.hidden || isAfterWork() ? "away" : "online");
 
-    // Foco da janela (alt+tab / outro app)
+    // Foco da janela (alt+tab / outro app) — debounce longo para ignorar blur de navegação interna
     let blurTimer;
-    const onBlur  = () => { blurTimer = setTimeout(() => update("away"),  5000); };
-    const onFocus = () => { clearTimeout(blurTimer); update(isAfterWork() ? "away" : "online"); };
+    const onBlur     = () => { blurTimer = setTimeout(() => update("away"), 20000); };
+    const onFocus    = () => { clearTimeout(blurTimer); update(isAfterWork() ? "away" : "online"); };
+    const onActivity = () => { clearTimeout(blurTimer); };
 
-    // Checar horário a cada minuto
-    const clock = setInterval(() => { if (isAfterWork()) update("away"); }, 60000);
+    // Checar horário a cada minuto + heartbeat de presença
+    const clock = setInterval(() => {
+      if (isAfterWork()) update("away");
+      else if (!document.hidden) update("online");
+    }, 30000);
 
     document.addEventListener("visibilitychange", onVisibility);
-    window.addEventListener("blur",  onBlur);
-    window.addEventListener("focus", onFocus);
+    window.addEventListener("blur",     onBlur);
+    window.addEventListener("focus",    onFocus);
+    window.addEventListener("click",    onActivity);
+    window.addEventListener("keydown",  onActivity);
 
     return () => {
       clearTimeout(blurTimer);
       clearInterval(clock);
       document.removeEventListener("visibilitychange", onVisibility);
-      window.removeEventListener("blur",  onBlur);
-      window.removeEventListener("focus", onFocus);
+      window.removeEventListener("blur",     onBlur);
+      window.removeEventListener("focus",    onFocus);
+      window.removeEventListener("click",    onActivity);
+      window.removeEventListener("keydown",  onActivity);
     };
   }, [user?.id]);
   const goHome = () => { setOpenPage(null); setView("home"); };

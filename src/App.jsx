@@ -1403,7 +1403,7 @@ function LoginScreen({ onLogin, onAdmin }) {
   const [admPw,       setAdmPw]       = useState("");
   const [admErr,      setAdmErr]      = useState("");
 
-  useEffect(() => { loadEmployees().then(e=>{setEmployees(e);setLoading(false);}); }, []);
+  useEffect(() => { loadEmployees().then(e=>{setEmployees(e);setLoading(false);}).catch(()=>setLoading(false)); }, []);
 
   const attempt = () => {
     if (!selected) return;

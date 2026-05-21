@@ -1132,27 +1132,40 @@ function RecordModal({ record, employees, tipos=[], pageDepartment="Geral", page
 
 // ── Presence Bar ─────────────────────────────────────────────────────
 
+const WORK_END = { hour: 18, minute: 30 }; // seg-sex encerra às 18:30
+
 function PresenceBar({ employees }) {
   const { t } = useTheme();
-  const [open,   setOpen]   = useState(false);
-  const [online, setOnline] = useState(new Set());
+  const [open,     setOpen]     = useState(false);
+  const [presence, setPresence] = useState({}); // { [uid]: "online"|"away" }
 
   useEffect(() => {
     const unsub = onSnapshot(collection(db, "presence"), snap => {
-      setOnline(new Set(snap.docs.map(d => d.id)));
+      const map = {};
+      snap.docs.forEach(d => { map[d.id] = d.data().status || "online"; });
+      setPresence(map);
     });
     return () => unsub();
   }, []);
 
-  const sorted = [...employees].sort((a, b) => (online.has(a.id) ? 0 : 1) - (online.has(b.id) ? 0 : 1));
-  const onlineCount = employees.filter(e => online.has(e.id)).length;
+  const statusOrder = { online: 0, away: 1 };
+  const sorted = [...employees].sort((a, b) => {
+    const sa = statusOrder[presence[a.id]] ?? 2;
+    const sb = statusOrder[presence[b.id]] ?? 2;
+    return sa - sb;
+  });
+
+  const dotColor = id => presence[id] === "online" ? "#22c55e" : presence[id] === "away" ? "#f97316" : "#94a3b8";
+  const onlineCount = employees.filter(e => presence[e.id] === "online").length;
+  const awayCount   = employees.filter(e => presence[e.id] === "away").length;
 
   return (
     <div style={{ background:t.card, border:`1px solid ${t.border}`, borderRadius:14, marginBottom:18, overflow:"hidden" }}>
       <div onClick={()=>setOpen(v=>!v)} style={{ padding:"12px 18px", cursor:"pointer", display:"flex", alignItems:"center", justifyContent:"space-between", userSelect:"none" }}>
-        <div style={{ display:"flex", alignItems:"center", gap:10 }}>
+        <div style={{ display:"flex", alignItems:"center", gap:8 }}>
           <span style={{ fontSize:14, fontWeight:700, color:t.text }}>👥 Equipe</span>
           {onlineCount > 0 && <span style={{ background:"#dcfce7", color:"#16a34a", fontSize:11, fontWeight:700, padding:"2px 8px", borderRadius:20 }}>{onlineCount} online</span>}
+          {awayCount   > 0 && <span style={{ background:"#fff7ed", color:"#c2410c", fontSize:11, fontWeight:700, padding:"2px 8px", borderRadius:20 }}>{awayCount} ausente</span>}
         </div>
         <span style={{ color:t.textMuted, fontSize:11 }}>{open ? "▲" : "▼"}</span>
       </div>
@@ -1162,7 +1175,7 @@ function PresenceBar({ employees }) {
             <div key={emp.id} style={{ display:"flex", alignItems:"center", gap:8, background:t.pageBg, border:`1px solid ${t.border}`, borderRadius:10, padding:"7px 12px" }}>
               <div style={{ position:"relative" }}>
                 <Avatar name={emp.name} color={emp.color} size={26} />
-                <div style={{ position:"absolute", bottom:0, right:0, width:9, height:9, borderRadius:"50%", background:online.has(emp.id)?"#22c55e":"#94a3b8", border:`2px solid ${t.card}` }} />
+                <div style={{ position:"absolute", bottom:0, right:0, width:9, height:9, borderRadius:"50%", background:dotColor(emp.id), border:`2px solid ${t.card}` }} />
               </div>
               <span style={{ fontSize:13, fontWeight:500, color:t.text }}>{emp.name}</span>
             </div>
@@ -1569,10 +1582,43 @@ export default function App() {
 
   useEffect(() => {
     if (!user) return;
-    setDoc(doc(db,"presence",user.id),{uid:user.id}).catch(()=>{});
-    const bye = () => navigator.sendBeacon && navigator.sendBeacon("", "");
-    window.addEventListener("beforeunload", () => deleteDoc(doc(db,"presence",user.id)).catch(()=>{}));
-    return () => {};
+
+    const ref = doc(db, "presence", user.id);
+
+    const isAfterWork = () => {
+      const now = new Date();
+      const day = now.getDay(); // 0=dom, 6=sab
+      if (day === 0 || day === 6) return true;
+      return now.getHours() > WORK_END.hour || (now.getHours() === WORK_END.hour && now.getMinutes() >= WORK_END.minute);
+    };
+
+    const update = status => setDoc(ref, { uid: user.id, status }).catch(() => {});
+
+    // Status inicial
+    update(isAfterWork() ? "away" : "online");
+
+    // Visibilidade da aba (minimizar / trocar de aba)
+    const onVisibility = () => update(document.hidden || isAfterWork() ? "away" : "online");
+
+    // Foco da janela (alt+tab / outro app)
+    let blurTimer;
+    const onBlur  = () => { blurTimer = setTimeout(() => update("away"),  5000); };
+    const onFocus = () => { clearTimeout(blurTimer); update(isAfterWork() ? "away" : "online"); };
+
+    // Checar horário a cada minuto
+    const clock = setInterval(() => { if (isAfterWork()) update("away"); }, 60000);
+
+    document.addEventListener("visibilitychange", onVisibility);
+    window.addEventListener("blur",  onBlur);
+    window.addEventListener("focus", onFocus);
+
+    return () => {
+      clearTimeout(blurTimer);
+      clearInterval(clock);
+      document.removeEventListener("visibilitychange", onVisibility);
+      window.removeEventListener("blur",  onBlur);
+      window.removeEventListener("focus", onFocus);
+    };
   }, [user?.id]);
   const goHome = () => { setOpenPage(null); setView("home"); };
   const goPage = (pg, emps) => { setOpenPage(pg); setOpenEmps(emps||[]); setView("page"); };

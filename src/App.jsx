@@ -1,4 +1,6 @@
 import { useState, useEffect, useRef, createContext, useContext } from "react";
+import { collection, doc, getDocs, setDoc, deleteDoc, writeBatch, query, where, onSnapshot } from "firebase/firestore";
+import { db } from "./firebase";
 
 // ── Constants ─────────────────────────────────────────────────────────
 
@@ -296,66 +298,89 @@ function ConfirmDialog({ message, onConfirm, onCancel }) {
   );
 }
 
-// ── Storage helpers ───────────────────────────────────────────────────
+// ── Storage helpers (Firestore) ───────────────────────────────────────
+
+async function getCol(colName) {
+  const snap = await getDocs(collection(db, colName));
+  return snap.docs.map(d => d.data());
+}
+
+async function syncCol(colName, list, idKey = "id") {
+  const snap = await getDocs(collection(db, colName));
+  const batch = writeBatch(db);
+  const kept = new Set(list.map(x => String(x[idKey])));
+  snap.docs.forEach(d => { if (!kept.has(d.id)) batch.delete(d.ref); });
+  list.forEach(x => batch.set(doc(db, colName, String(x[idKey])), x));
+  await batch.commit();
+}
 
 async function loadEmployees() {
   try {
-    const r = localStorage.getItem("employees");
-    if (r) return JSON.parse(r);
-    localStorage.setItem("employees", JSON.stringify(DEFAULT_EMPLOYEES));
+    const data = await getCol("employees");
+    if (data.length) return data;
+    await syncCol("employees", DEFAULT_EMPLOYEES);
     return DEFAULT_EMPLOYEES;
   } catch { return DEFAULT_EMPLOYEES; }
 }
 
 async function loadPages() {
   try {
-    const r = localStorage.getItem("pages");
-    if (r) return JSON.parse(r);
-    localStorage.setItem("pages", JSON.stringify([SEED_PAGE]));
-    localStorage.setItem(`records:${SEED_PAGE.id}`, JSON.stringify(SEED_RECORDS));
+    const data = await getCol("pages");
+    if (data.length) return data;
+    const batch = writeBatch(db);
+    batch.set(doc(db, "pages", SEED_PAGE.id), SEED_PAGE);
+    SEED_RECORDS.forEach(r => batch.set(doc(db, "records", `${SEED_PAGE.id}-${r.id}`), { ...r, pageId: SEED_PAGE.id }));
+    await batch.commit();
     return [SEED_PAGE];
   } catch { return [SEED_PAGE]; }
 }
 
 async function savePages(list) {
-  try { localStorage.setItem("pages", JSON.stringify(list)); } catch {}
+  try { await syncCol("pages", list); } catch {}
 }
 
 async function loadRecords(pageId) {
   try {
-    const r = localStorage.getItem(`records:${pageId}`);
-    return r ? JSON.parse(r) : [];
+    const q = query(collection(db, "records"), where("pageId", "==", pageId));
+    const snap = await getDocs(q);
+    return snap.docs.map(d => d.data()).sort((a, b) => a.id - b.id);
   } catch { return []; }
 }
 
-async function saveRecords(pageId, list) {
-  try { localStorage.setItem(`records:${pageId}`, JSON.stringify(list)); } catch {}
+async function deletePageRecords(pageId) {
+  try {
+    const q = query(collection(db, "records"), where("pageId", "==", pageId));
+    const snap = await getDocs(q);
+    const batch = writeBatch(db);
+    snap.docs.forEach(d => batch.delete(d.ref));
+    await batch.commit();
+  } catch {}
 }
 
 async function loadTipos() {
   try {
-    const r = localStorage.getItem("tipos");
-    if (r) return JSON.parse(r);
-    localStorage.setItem("tipos", JSON.stringify(DEFAULT_TIPOS));
+    const data = await getCol("tipos");
+    if (data.length) return data;
+    await syncCol("tipos", DEFAULT_TIPOS);
     return DEFAULT_TIPOS;
   } catch { return DEFAULT_TIPOS; }
 }
 
 async function saveTipos(list) {
-  try { localStorage.setItem("tipos", JSON.stringify(list)); } catch {}
+  try { await syncCol("tipos", list); } catch {}
 }
 
 async function loadDepartments() {
   try {
-    const r = localStorage.getItem("departments");
-    if (r) return JSON.parse(r);
-    localStorage.setItem("departments", JSON.stringify(DEFAULT_DEPARTMENTS));
+    const data = await getCol("departments");
+    if (data.length) return data;
+    await syncCol("departments", DEFAULT_DEPARTMENTS);
     return DEFAULT_DEPARTMENTS;
   } catch { return DEFAULT_DEPARTMENTS; }
 }
 
 async function saveDepartments(list) {
-  try { localStorage.setItem("departments", JSON.stringify(list)); } catch {}
+  try { await syncCol("departments", list); } catch {}
 }
 
 // ── Department Modal ──────────────────────────────────────────────────
@@ -693,12 +718,12 @@ function AdminPanel({ onBack }) {
   const deletePage = async () => {
     const pg = pages.find(p=>p.id===confirmId);
     await persistPages(pages.filter(p=>p.id!==confirmId));
-    try { localStorage.removeItem(`records:${confirmId}`); } catch {}
+    await deletePageRecords(confirmId);
     showToast("🗑️  Planilha \"" + (pg?.name||"") + "\" excluída.");
     setConfirmId(null); setConfirmType(null);
   };
 
-  const persistEmployees = async list => { setEmployees(list); try { localStorage.setItem("employees", JSON.stringify(list)); } catch {}; };
+  const persistEmployees = async list => { setEmployees(list); try { await syncCol("employees", list); } catch {}; };
 
   const persistTipos = async list => { setTipos(list); await saveTipos(list); };
 
@@ -1190,17 +1215,24 @@ function PageDetail({ page, initEmployees, user, onBack, onLogout }) {
   const [filters,   setFilters]   = useState({ search:"", status:"Todos", tipo:"Todos", via:"Todos", atendente:"Todos" });
 
   useEffect(() => {
+    let unsub;
     (async () => {
-      const [emps, recs, tps] = await Promise.all([loadEmployees(), loadRecords(page.id), loadTipos()]);
-      setEmployees(emps); setRecords(recs); setTipos(tps); setLoading(false);
+      const [emps, tps] = await Promise.all([loadEmployees(), loadTipos()]);
+      setEmployees(emps); setTipos(tps);
+      const q = query(collection(db, "records"), where("pageId", "==", page.id));
+      unsub = onSnapshot(q, snap => {
+        setRecords(snap.docs.map(d => d.data()).sort((a, b) => a.id - b.id));
+        setLoading(false);
+      });
     })();
+    return () => unsub?.();
   }, [page.id]);
 
-  const persist    = async list => { setRecords(list); await saveRecords(page.id, list); };
-  const addRecord  = f => { const id = records.length ? Math.max(...records.map(r=>r.id))+1 : 1; persist([{...f,id},...records]); setModal(null); };
-  const editRecord = f => { persist(records.map(r=>r.id===f.id?f:r)); setModal(null); };
-  const delRecord  = () => { persist(records.filter(r=>r.id!==confirmId)); setConfirmId(null); };
-  const togglePrio = id => persist(records.map(r=>r.id===id?{...r,prioridade:!r.prioridade}:r));
+  const addRecord  = async f => { const id = records.length ? Math.max(...records.map(r=>r.id))+1 : 1; await setDoc(doc(db,"records",`${page.id}-${id}`), {...f, id, pageId:page.id}); setModal(null); };
+  const editRecord = async f => { await setDoc(doc(db,"records",`${page.id}-${f.id}`), {...f, pageId:page.id}); setModal(null); };
+  const delRecord  = async () => { await deleteDoc(doc(db,"records",`${page.id}-${confirmId}`)); setConfirmId(null); };
+  const togglePrio = async id => { const r = records.find(x=>x.id===id); if(r) await setDoc(doc(db,"records",`${page.id}-${id}`), {...r, prioridade:!r.prioridade}); };
+  const resolveRecord = async r => { await setDoc(doc(db,"records",`${page.id}-${r.id}`), {...r, status:"Resolvido", pageId:page.id}); };
   const setF = k => v => setFilters(p=>({...p,[k]:v}));
 
   const filtered = records.filter(r => {
@@ -1332,7 +1364,7 @@ function PageDetail({ page, initEmployees, user, onBack, onLogout }) {
                         <td style={{ padding:"9px 8px", whiteSpace:"nowrap" }}>
                           <button onClick={()=>setModal({mode:"edit",record:r})} style={{ background:"none", border:`1px solid ${t.border}`, cursor:"pointer", borderRadius:7, padding:"4px 8px", fontSize:12, marginRight:4 }}>✏️</button>
                           <button
-                            onClick={()=>r.status!=="Resolvido"&&persist(records.map(x=>x.id===r.id?{...x,status:"Resolvido"}:x))}
+                            onClick={()=>r.status!=="Resolvido"&&resolveRecord(r)}
                             disabled={r.status==="Resolvido"}
                             title={r.status==="Resolvido"?"Já resolvido":"Marcar como resolvido"}
                             style={{ background:r.status==="Resolvido"?"none":"none", border:r.status==="Resolvido"?`1px solid ${t.border}`:"1px solid #bbf7d0", cursor:r.status==="Resolvido"?"default":"pointer", borderRadius:7, padding:"4px 8px", fontSize:12, marginRight:4, opacity:r.status==="Resolvido"?0.35:1 }}>✅</button>

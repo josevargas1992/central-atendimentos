@@ -180,6 +180,20 @@ const maskPhone = raw  => {
   return `(${d.slice(0,2)}) ${d.slice(2,7)}-${d.slice(7)}`;
 };
 
+function playBeep() {
+  try {
+    const ctx = new (window.AudioContext || window.webkitAudioContext)();
+    [0, 0.35].forEach(t => {
+      const osc = ctx.createOscillator(), g = ctx.createGain();
+      osc.connect(g); g.connect(ctx.destination);
+      osc.type = "sine"; osc.frequency.value = 880;
+      g.gain.setValueAtTime(0.4, ctx.currentTime + t);
+      g.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + t + 0.3);
+      osc.start(ctx.currentTime + t); osc.stop(ctx.currentTime + t + 0.3);
+    });
+  } catch(e) {}
+}
+
 // ── Seed Data ─────────────────────────────────────────────────────────
 
 const SEED_PAGE = { id:"page-maio-2026", name:"Atendimentos - Maio 2026", department:"Suporte ao Cliente", responsibleId:"gabriele", month:5, year:2026, createdAt:"2026-05-01" };
@@ -1051,15 +1065,22 @@ function RecordModal({ record, employees, tipos=[], pageDepartment="Geral", page
     return especificos.length > 0 ? especificos : tipos.filter(tp => tp.department === "Geral");
   })();
   const defaultTipo = tiposFiltrados[0]?.label || "Outro";
-  const [f, setF] = useState(record ? {...record} : { status:"Em atendimento", data:todayStr(), cliente:"", via:"Ticket", contato:"", tipo:defaultTipo, atendenteId:defaultAtendente, prioridade:false, descricao:"" });
+  const [f, setF] = useState(record ? {...record} : { status:"Em atendimento", data:todayStr(), cliente:"", via:"Ticket", contato:"", tipo:defaultTipo, atendenteId:defaultAtendente, prioridade:false, descricao:"", agendamento:null });
   const set = k => v => setF(p=>({...p,[k]:v}));
   const ok = f.cliente.trim().length > 0;
+  const setAg = k => v => setF(p=>({...p, agendamento:{...p.agendamento,[k]:v}}));
+  const handleSave = () => {
+    if (!ok) return;
+    let data = {...f};
+    if (data.agendamento && !data.agendamento.concluido && data.status !== "Resolvido") data.status = "Pendente";
+    onSave(data);
+  };
 
   return (
     <ModalShell
       title={record?.id ? "✏️  Editar Atendimento" : "➕  Novo Atendimento"}
       onClose={onClose}
-      footer={<div style={{ display:"flex", gap:12 }}><button onClick={onClose} style={bS}>Cancelar</button><button onClick={()=>ok&&onSave(f)} style={btnP(!ok)}>{record?.id?"Salvar Alterações":"Registrar Atendimento"}</button></div>}
+      footer={<div style={{ display:"flex", gap:12 }}><button onClick={onClose} style={bS}>Cancelar</button><button onClick={handleSave} style={btnP(!ok)}>{record?.id?"Salvar Alterações":"Registrar Atendimento"}</button></div>}
     >
       <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr", gap:"0 16px" }}>
         <Field label="Status">
@@ -1128,6 +1149,73 @@ function RecordModal({ record, employees, tipos=[], pageDepartment="Geral", page
         <input type="checkbox" checked={f.prioridade} onChange={()=>{}} style={{ width:17, height:17, cursor:"pointer", accentColor:"#6366f1" }} />
         <span style={{ fontSize:14, color:t.textSub, fontWeight:500 }}>Marcar como prioritário</span>
       </div>
+      <div style={{ borderTop:`1px solid ${t.border}`, marginTop:16, paddingTop:16 }}>
+        <div style={{ display:"flex", alignItems:"center", gap:10, cursor:"pointer", marginBottom:f.agendamento?14:0 }}
+          onClick={()=>set("agendamento")(f.agendamento ? null : { titulo:"", dataHora:"", descricao:"", concluido:false })}>
+          <input type="checkbox" checked={!!f.agendamento} onChange={()=>{}} style={{ width:17, height:17, cursor:"pointer", accentColor:"#f59e0b" }} />
+          <span style={{ fontSize:14, color:t.textSub, fontWeight:500 }}>📅 Adicionar compromisso</span>
+        </div>
+        {f.agendamento && (
+          <div style={{ display:"flex", flexDirection:"column", gap:0 }}>
+            <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr", gap:"0 16px" }}>
+              <Field label="Título do compromisso">
+                <input value={f.agendamento.titulo} onChange={e=>setAg("titulo")(e.target.value)} style={inp} placeholder="Ex: Retorno ao cliente..." />
+              </Field>
+              <Field label="Data e hora">
+                <input type="datetime-local" value={f.agendamento.dataHora} onChange={e=>setAg("dataHora")(e.target.value)} style={inp} />
+              </Field>
+            </div>
+            <Field label="Observação (opcional)">
+              <input value={f.agendamento.descricao} onChange={e=>setAg("descricao")(e.target.value)} style={inp} placeholder="Detalhes do compromisso..." />
+            </Field>
+          </div>
+        )}
+      </div>
+    </ModalShell>
+  );
+}
+
+// ── Agenda Modal ─────────────────────────────────────────────────────
+
+function AgendaModal({ record, onSave, onClose }) {
+  const { t } = useTheme();
+  const inp = { width:"100%", padding:"9px 12px", border:`1.5px solid ${t.inputBorder}`, borderRadius:9, fontSize:14, color:t.inputText, outline:"none", boxSizing:"border-box", background:t.inputBg, ...FF };
+  const bS  = { padding:"11px 20px", background:t.btnSecBg, border:"none", borderRadius:10, color:t.btnSecText, fontWeight:600, fontSize:14, cursor:"pointer", ...FF };
+  const ag  = record.agendamento || {};
+  const [titulo,    setTitulo]    = useState(ag.titulo    || "");
+  const [dataHora,  setDataHora]  = useState(ag.dataHora  || "");
+  const [descricao, setDescricao] = useState(ag.descricao || "");
+  const fmtDH = dh => dh ? new Date(dh).toLocaleString("pt-BR",{day:"2-digit",month:"2-digit",year:"numeric",hour:"2-digit",minute:"2-digit"}) : "—";
+
+  const save     = () => onSave({...record, agendamento:{titulo,dataHora,descricao,concluido:false}, status:"Pendente"});
+  const complete = () => onSave({...record, agendamento:{...ag,titulo,dataHora,descricao,concluido:true}, status:"Em atendimento"});
+  const remove   = () => onSave({...record, agendamento:null});
+
+  return (
+    <ModalShell title="📅  Compromisso" onClose={onClose}
+      footer={
+        <div style={{ display:"flex", gap:8, flexWrap:"wrap" }}>
+          <button onClick={onClose} style={bS}>Fechar</button>
+          {!ag.concluido && <button onClick={complete} style={{ padding:"11px 20px", background:"linear-gradient(135deg,#16a34a,#15803d)", border:"none", borderRadius:10, color:"#fff", fontWeight:700, fontSize:14, cursor:"pointer", ...FF }}>✅ Concluir</button>}
+          <button onClick={save} style={btnP(false)}>Salvar</button>
+        </div>
+      }
+    >
+      <div style={{ background:t.pageBg, borderRadius:12, padding:"12px 16px", marginBottom:16, fontSize:13 }}>
+        <div style={{ fontWeight:700, color:t.text, marginBottom:3 }}>{record.cliente}</div>
+        <div style={{ color:t.textMuted }}>Via {record.via} · {record.tipo} · {record.data}</div>
+        {ag.concluido && <div style={{ marginTop:6, color:"#16a34a", fontWeight:600, fontSize:12 }}>✅ Compromisso concluído</div>}
+      </div>
+      <Field label="Título do compromisso">
+        <input value={titulo} onChange={e=>setTitulo(e.target.value)} style={inp} placeholder="Ex: Retorno ao cliente..." />
+      </Field>
+      <Field label="Data e hora">
+        <input type="datetime-local" value={dataHora} onChange={e=>setDataHora(e.target.value)} style={inp} />
+      </Field>
+      <Field label="Observação (opcional)">
+        <input value={descricao} onChange={e=>setDescricao(e.target.value)} style={inp} placeholder="Detalhes do compromisso..." />
+      </Field>
+      <button onClick={remove} style={{ background:"none", border:"1px solid #fecaca", color:"#dc2626", borderRadius:8, padding:"6px 14px", cursor:"pointer", fontSize:12, marginTop:8, ...FF }}>🗑️ Remover compromisso</button>
     </ModalShell>
   );
 }
@@ -1270,9 +1358,12 @@ function PageDetail({ page, initEmployees, user, onBack, onLogout }) {
   const [records,   setRecords]   = useState([]);
   const [tipos,     setTipos]     = useState([]);
   const [loading,   setLoading]   = useState(true);
-  const [modal,     setModal]     = useState(null);
-  const [confirmId,  setConfirmId]  = useState(null);
-  const [satPopup,   setSatPopup]   = useState(false);
+  const [modal,       setModal]       = useState(null);
+  const [confirmId,   setConfirmId]   = useState(null);
+  const [satPopup,    setSatPopup]    = useState(false);
+  const [agendaModal, setAgendaModal] = useState(null);
+  const [alertRecord, setAlertRecord] = useState(null);
+  const alertedIds = useRef(new Set());
   const [filters,   setFilters]   = useState({ search:"", status:"Todos", tipo:"Todos", via:"Todos", atendente:"Todos" });
 
   useEffect(() => {
@@ -1294,7 +1385,22 @@ function PageDetail({ page, initEmployees, user, onBack, onLogout }) {
   const delRecord  = async () => { await deleteDoc(doc(db,"records",`${page.id}-${confirmId}`)); setConfirmId(null); };
   const togglePrio = async id => { const r = records.find(x=>x.id===id); if(r) await setDoc(doc(db,"records",`${page.id}-${id}`), {...r, prioridade:!r.prioridade}); };
   const resolveRecord = async r => { await setDoc(doc(db,"records",`${page.id}-${r.id}`), {...r, status:"Resolvido", pageId:page.id}); setSatPopup(true); };
+  const saveAgenda    = async updated => { await setDoc(doc(db,"records",`${page.id}-${updated.id}`), {...updated, pageId:page.id}); setAgendaModal(null); };
   const setF = k => v => setFilters(p=>({...p,[k]:v}));
+
+  useEffect(() => {
+    const check = () => {
+      const now = new Date();
+      records.forEach(r => {
+        if (!r.agendamento || r.agendamento.concluido || alertedIds.current.has(r.id)) return;
+        const diff = (new Date(r.agendamento.dataHora) - now) / 60000;
+        if (diff >= 0 && diff <= 5) { alertedIds.current.add(r.id); setAlertRecord(r); playBeep(); }
+      });
+    };
+    check();
+    const timer = setInterval(check, 30000);
+    return () => clearInterval(timer);
+  }, [records]);
 
   const filtered = records.filter(r => {
     if (filters.search && ![r.cliente,r.descricao,r.contato].some(s=>s.toLowerCase().includes(filters.search.toLowerCase()))) return false;
@@ -1360,7 +1466,7 @@ function PageDetail({ page, initEmployees, user, onBack, onLogout }) {
           ))}
         </div>
 
-        <div style={{ background:t.card, borderRadius:14, border:`1px solid ${t.border}`, padding:"13px 18px", marginBottom:14, display:"flex", gap:10, alignItems:"center", flexWrap:"wrap" }}>
+        <div style={{ background:t.card, borderRadius:14, border:`1px solid ${t.border}`, padding:"13px 18px", marginBottom:14, display:"flex", gap:10, alignItems:"center", flexWrap:"wrap", position:"sticky", top:58, zIndex:10 }}>
           <input value={filters.search} onChange={e=>setF("search")(e.target.value)} placeholder="🔍  Buscar cliente, descrição ou contato..." style={{ flex:1, minWidth:190, padding:"8px 14px", border:`1.5px solid ${t.inputBorder}`, borderRadius:9, fontSize:13, color:t.inputText, outline:"none", background:t.inputBg, ...FF }} />
           <select value={filters.status}    onChange={e=>setF("status")(e.target.value)}    style={selSt}><option>Todos</option><option>Em atendimento</option><option>Resolvido</option><option>Pendente</option></select>
           <select value={filters.tipo} onChange={e=>setF("tipo")(e.target.value)} style={selSt}>
@@ -1391,9 +1497,24 @@ function PageDetail({ page, initEmployees, user, onBack, onLogout }) {
               <table style={{ width:"100%", borderCollapse:"collapse", fontSize:13 }}>
                 <thead>
                   <tr style={{ background:t.thead, borderBottom:`2px solid ${t.theadBorder}` }}>
-                    {[["P","36px"],["Status","130px"],["Data","72px"],["Atendente","110px"],["Cliente",""],["Via","90px"],["Contato","140px"],["Tipo","115px"],["Descrição",""],["","80px"]].map(([h,w])=>(
+                    {[["P","36px"],["Status","130px"],["Data","72px"],["Atendente","110px"],["Cliente",""],["Via","90px"],["Contato","140px"],["Tipo","115px"],["Descrição",""],["","90px"]].map(([h,w])=>(
                       <th key={h} style={{ padding:"11px 12px", textAlign:"left", color:t.textMuted, fontWeight:700, fontSize:11, textTransform:"uppercase", letterSpacing:0.5, whiteSpace:"nowrap", width:w||undefined }}>{h}</th>
                     ))}
+                    <th style={{ padding:"11px 12px", textAlign:"center", color:t.textMuted, width:"44px" }}>
+                      <span style={{ display:"inline-flex", alignItems:"center", gap:4 }}>
+                        <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                          <path d="M21 13V6a2 2 0 0 0-2-2H5a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h8"/>
+                          <line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/>
+                          <line x1="3" y1="10" x2="21" y2="10"/>
+                          <circle cx="18" cy="18" r="4"/><polyline points="18 16 18 18 20 18"/>
+                        </svg>
+                        {records.filter(r=>r.agendamento&&!r.agendamento.concluido).length > 0 && (
+                          <span style={{ background:"#f59e0b", color:"#fff", borderRadius:10, padding:"1px 5px", fontSize:10, fontWeight:700 }}>
+                            {records.filter(r=>r.agendamento&&!r.agendamento.concluido).length}
+                          </span>
+                        )}
+                      </span>
+                    </th>
                   </tr>
                 </thead>
                 <tbody>
@@ -1424,13 +1545,18 @@ function PageDetail({ page, initEmployees, user, onBack, onLogout }) {
                         <td style={{ padding:"9px 12px" }}><TipoBadge tipo={r.tipo} tipoObj={tiposMap[r.tipo]} /></td>
                         <td style={{ padding:"9px 12px", maxWidth:240 }}><div style={{ overflow:"hidden", textOverflow:"ellipsis", whiteSpace:"nowrap", color:t.textSub }}>{r.descricao}</div></td>
                         <td style={{ padding:"9px 8px", whiteSpace:"nowrap" }}>
-                          <button onClick={()=>setModal({mode:"edit",record:r})} style={{ background:"none", border:`1px solid ${t.border}`, cursor:"pointer", borderRadius:7, padding:"4px 8px", fontSize:12, marginRight:4 }}>✏️</button>
+                          <button onClick={()=>setModal({mode:"edit",record:r})} title="Editar" style={{ background:"none", border:`1px solid ${t.border}`, cursor:"pointer", borderRadius:7, padding:"4px 8px", fontSize:12, marginRight:4 }}>✏️</button>
                           <button
                             onClick={()=>r.status!=="Resolvido"&&resolveRecord(r)}
                             disabled={r.status==="Resolvido"}
                             title={r.status==="Resolvido"?"Já resolvido":"Marcar como resolvido"}
-                            style={{ background:r.status==="Resolvido"?"none":"none", border:r.status==="Resolvido"?`1px solid ${t.border}`:"1px solid #bbf7d0", cursor:r.status==="Resolvido"?"default":"pointer", borderRadius:7, padding:"4px 8px", fontSize:12, marginRight:4, opacity:r.status==="Resolvido"?0.35:1 }}>✅</button>
-                          <button onClick={()=>setConfirmId(r.id)} style={{ background:"none", border:"1px solid #fecaca", cursor:"pointer", borderRadius:7, padding:"4px 8px", fontSize:12 }}>🗑️</button>
+                            style={{ background:"none", border:r.status==="Resolvido"?`1px solid ${t.border}`:"1px solid #bbf7d0", cursor:r.status==="Resolvido"?"default":"pointer", borderRadius:7, padding:"4px 8px", fontSize:12, marginRight:4, opacity:r.status==="Resolvido"?0.35:1 }}>✅</button>
+                          <button onClick={()=>setConfirmId(r.id)} title="Excluir" style={{ background:"none", border:"1px solid #fecaca", cursor:"pointer", borderRadius:7, padding:"4px 8px", fontSize:12 }}>🗑️</button>
+                        </td>
+                        <td style={{ padding:"9px 8px", textAlign:"center", width:"44px" }}>
+                          {r.agendamento&&!r.agendamento.concluido && (
+                            <button onClick={()=>setAgendaModal(r)} title={r.agendamento.titulo} style={{ background:"none", border:"none", cursor:"pointer", fontSize:15, padding:"2px 4px", borderRadius:6 }}>❗</button>
+                          )}
                         </td>
                       </tr>
                     );
@@ -1447,6 +1573,29 @@ function PageDetail({ page, initEmployees, user, onBack, onLogout }) {
 
       {modal && <RecordModal record={modal.mode==="edit"?modal.record:null} employees={employees} tipos={tipos} pageDepartment={page.department} pageMonth={page.month} pageYear={page.year} onSave={modal.mode==="edit"?editRecord:addRecord} onClose={()=>setModal(null)} currentUser={user} />}
       {confirmId!==null && <ConfirmDialog message="Este registro será excluído permanentemente." onConfirm={delRecord} onCancel={()=>setConfirmId(null)} />}
+      {agendaModal && <AgendaModal record={agendaModal} onSave={saveAgenda} onClose={()=>setAgendaModal(null)} />}
+      {alertRecord && (
+        <Overlay z={1200}>
+          <div style={{ background:"#fff", borderRadius:20, padding:"28px 32px", maxWidth:400, width:"90%", boxShadow:"0 20px 50px rgba(0,0,0,0.3)", ...FF }}>
+            <div style={{ fontSize:38, textAlign:"center", marginBottom:10 }}>⏰</div>
+            <h3 style={{ margin:"0 0 4px", fontSize:17, fontWeight:700, color:"#1e293b", textAlign:"center" }}>Compromisso em 5 minutos!</h3>
+            <p style={{ margin:"0 0 16px", fontSize:13, color:"#64748b", textAlign:"center" }}>Verifique os detalhes abaixo</p>
+            <div style={{ background:"#fefce8", border:"1px solid #fde68a", borderRadius:10, padding:"12px 14px", marginBottom:12, fontSize:13 }}>
+              <div style={{ fontWeight:700, color:"#92400e", marginBottom:4 }}>📅 {alertRecord.agendamento.titulo}</div>
+              {alertRecord.agendamento.dataHora && <div style={{ color:"#78350f", marginBottom:4 }}>🕐 {new Date(alertRecord.agendamento.dataHora).toLocaleString("pt-BR",{day:"2-digit",month:"2-digit",hour:"2-digit",minute:"2-digit"})}</div>}
+              {alertRecord.agendamento.descricao && <div style={{ color:"#92400e" }}>📝 {alertRecord.agendamento.descricao}</div>}
+            </div>
+            <div style={{ background:"#f1f5f9", borderRadius:10, padding:"10px 14px", fontSize:13, color:"#475569", marginBottom:20 }}>
+              <div style={{ fontWeight:600, marginBottom:2 }}>{alertRecord.cliente}</div>
+              <div>Via {alertRecord.via} · {alertRecord.tipo} · {alertRecord.data}</div>
+            </div>
+            <div style={{ display:"flex", gap:8 }}>
+              <button onClick={()=>setAlertRecord(null)} style={{ flex:1, padding:"10px 0", background:"#f1f5f9", border:"none", borderRadius:10, color:"#475569", fontWeight:600, cursor:"pointer", ...FF }}>Dispensar</button>
+              <button onClick={()=>{ setAgendaModal(alertRecord); setAlertRecord(null); }} style={{ flex:2, padding:"10px 0", background:"linear-gradient(135deg,#f59e0b,#d97706)", border:"none", borderRadius:10, color:"#fff", fontWeight:700, cursor:"pointer", ...FF }}>Ver compromisso</button>
+            </div>
+          </div>
+        </Overlay>
+      )}
       {satPopup && (
         <Overlay z={1100}>
           <div style={{ background:"#fff", borderRadius:20, padding:"32px 36px", maxWidth:360, width:"90%", textAlign:"center", boxShadow:"0 20px 50px rgba(0,0,0,0.25)", ...FF }}>

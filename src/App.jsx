@@ -249,9 +249,9 @@ function StatusBadge({ status }) {
   const c = STATUS_CFG[status] || { bg:"#f1f5f9", text:"#475569", dot:"#94a3b8" };
   return <span style={{ display:"inline-flex", alignItems:"center", gap:5, background:c.bg, color:c.text, padding:"4px 10px 4px 7px", borderRadius:20, fontSize:11.5, fontWeight:600, whiteSpace:"nowrap" }}><span style={{ width:7, height:7, borderRadius:"50%", background:c.dot, flexShrink:0 }} />{status}</span>;
 }
-function TipoBadge({ tipo, tipoObj }) {
+function TipoBadge({ tipo, tipoObj, onClick }) {
   const c = tipoObj || TIPO_CFG[tipo] || { bg:"#f1f5f9", text:"#475569" };
-  return <span style={{ background:c.bg, color:c.text, padding:"3px 9px", borderRadius:20, fontSize:11, fontWeight:600, whiteSpace:"nowrap", display:"inline-block" }}>{tipo}</span>;
+  return <span onClick={onClick} style={{ background:c.bg, color:c.text, padding:"3px 9px", borderRadius:20, fontSize:11, fontWeight:600, whiteSpace:"nowrap", display:"inline-block", cursor:onClick?"pointer":"default" }}>{tipo}</span>;
 }
 function ViaBadge({ via }) {
   const map = { Ticket:["🎫","#6366f1"], WhatsApp:["💬","#22c55e"], Telefone:["📞","#0ea5e9"], Telegram:["✈️","#229ED9"] };
@@ -436,17 +436,15 @@ function TipoModal({ tipo, departments=[], onSave, onClose }) {
   const bS  = { flex:1, padding:12, background:t.btnSecBg, border:"none", borderRadius:10, color:t.btnSecText, fontWeight:600, fontSize:14, cursor:"pointer", ...FF };
 
   const editing = !!tipo;
-  const initColorIdx = tipo ? Math.max(0, TIPO_COLORS.findIndex(c => c.bg === tipo.bg)) : 0;
   const [label,      setLabel]      = useState(tipo?.label      || "");
   const [department, setDepartment] = useState(tipo?.department || departments[0]?.name || "Geral");
-  const [colorIdx,   setColorIdx]   = useState(initColorIdx);
+  const [bg,         setBg]         = useState(tipo?.bg   || TIPO_COLORS[0].bg);
+  const [text,       setText]       = useState(tipo?.text || TIPO_COLORS[0].text);
   const [error,      setError]      = useState("");
-
-  const cur = TIPO_COLORS[colorIdx];
 
   const submit = () => {
     if (!label.trim()) return setError("O nome do tipo é obrigatório.");
-    onSave({ id: tipo?.id || genId(), label: label.trim(), department, bg: cur.bg, text: cur.text });
+    onSave({ id: tipo?.id || genId(), label: label.trim(), department, bg, text });
   };
 
   return (
@@ -464,21 +462,92 @@ function TipoModal({ tipo, departments=[], onSave, onClose }) {
         </select>
       </Field>
       <Field label="Cor do badge">
-        <div style={{ display:"flex", flexWrap:"wrap", gap:8, marginBottom:12 }}>
+        <div style={{ fontSize:12, color:t.textMuted, marginBottom:6, fontWeight:600 }}>Presets rápidos</div>
+        <div style={{ display:"flex", flexWrap:"wrap", gap:8, marginBottom:14 }}>
           {TIPO_COLORS.map((c,i)=>(
-            <button key={i} onClick={()=>setColorIdx(i)} style={{ padding:"4px 14px", borderRadius:20, background:c.bg, color:c.text, border:colorIdx===i?`2px solid ${t.text}`:"2px solid transparent", cursor:"pointer", fontSize:12, fontWeight:700 }}>
+            <button key={i} onClick={()=>{setBg(c.bg);setText(c.text);}} style={{ padding:"4px 14px", borderRadius:20, background:c.bg, color:c.text, border:(bg===c.bg&&text===c.text)?`2px solid ${t.text}`:"2px solid transparent", cursor:"pointer", fontSize:12, fontWeight:700 }}>
               Aa
             </button>
           ))}
         </div>
+        <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr", gap:12, marginBottom:14 }}>
+          <div>
+            <div style={{ fontSize:12, color:t.textMuted, marginBottom:6, fontWeight:600 }}>Cor do fundo</div>
+            <div style={{ display:"flex", alignItems:"center", gap:8 }}>
+              <input type="color" value={bg} onChange={e=>setBg(e.target.value)} style={{ width:42, height:36, border:`1.5px solid ${t.inputBorder}`, borderRadius:8, cursor:"pointer", padding:2, background:"none" }} />
+              <span style={{ fontSize:12, color:t.textSub, fontFamily:"monospace" }}>{bg}</span>
+            </div>
+          </div>
+          <div>
+            <div style={{ fontSize:12, color:t.textMuted, marginBottom:6, fontWeight:600 }}>Cor da fonte</div>
+            <div style={{ display:"flex", alignItems:"center", gap:8 }}>
+              <input type="color" value={text} onChange={e=>setText(e.target.value)} style={{ width:42, height:36, border:`1.5px solid ${t.inputBorder}`, borderRadius:8, cursor:"pointer", padding:2, background:"none" }} />
+              <span style={{ fontSize:12, color:t.textSub, fontFamily:"monospace" }}>{text}</span>
+            </div>
+          </div>
+        </div>
         <div style={{ display:"flex", alignItems:"center", gap:8 }}>
           <span style={{ fontSize:12, color:t.textMuted }}>Prévia:</span>
-          <span style={{ background:cur.bg, color:cur.text, padding:"3px 12px", borderRadius:20, fontSize:12, fontWeight:600 }}>
+          <span style={{ background:bg, color:text, padding:"3px 12px", borderRadius:20, fontSize:12, fontWeight:600 }}>
             {label || "Tipo"}
           </span>
         </div>
       </Field>
       {error && <p style={{ color:"#dc2626", fontSize:13, margin:"-4px 0 0", fontWeight:500 }}>{error}</p>}
+    </ModalShell>
+  );
+}
+
+// ── Tipo Color Panel ──────────────────────────────────────────────────
+
+function TipoColorPanel({ tipos, department, onSave, onClose, initialTipo=null }) {
+  const { t } = useTheme();
+  const relevant = tipos.filter(tp => tp.department === department || tp.department === "Geral");
+  const [editing, setEditing] = useState(initialTipo); // { ...tipo }
+  const bS = { padding:"10px 18px", background:t.btnSecBg, border:"none", borderRadius:10, color:t.btnSecText, fontWeight:600, fontSize:14, cursor:"pointer", ...FF };
+
+  if (editing) return (
+    <ModalShell title={`🎨  Cores — ${editing.label}`} onClose={onClose} maxWidth={400}
+      footer={<div style={{ display:"flex", gap:12 }}>
+        <button onClick={initialTipo ? onClose : ()=>setEditing(null)} style={bS}>{initialTipo ? "Cancelar" : "Voltar"}</button>
+        <button onClick={()=>{ onSave(editing); setEditing(null); }} style={btnP(false)}>Salvar</button>
+      </div>}
+    >
+      <div style={{ display:"flex", justifyContent:"center", marginBottom:20 }}>
+        <span style={{ background:editing.bg, color:editing.text, padding:"5px 20px", borderRadius:20, fontSize:14, fontWeight:700 }}>{editing.label}</span>
+      </div>
+      <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr", gap:16 }}>
+        <div>
+          <div style={{ fontSize:12, color:t.textMuted, marginBottom:6, fontWeight:600 }}>Cor do fundo</div>
+          <div style={{ display:"flex", alignItems:"center", gap:8 }}>
+            <input type="color" value={editing.bg} onChange={e=>setEditing(p=>({...p, bg:e.target.value}))} style={{ width:42, height:36, border:`1.5px solid ${t.inputBorder}`, borderRadius:8, cursor:"pointer", padding:2, background:"none" }} />
+            <span style={{ fontSize:12, color:t.textSub, fontFamily:"monospace" }}>{editing.bg}</span>
+          </div>
+        </div>
+        <div>
+          <div style={{ fontSize:12, color:t.textMuted, marginBottom:6, fontWeight:600 }}>Cor da fonte</div>
+          <div style={{ display:"flex", alignItems:"center", gap:8 }}>
+            <input type="color" value={editing.text} onChange={e=>setEditing(p=>({...p, text:e.target.value}))} style={{ width:42, height:36, border:`1.5px solid ${t.inputBorder}`, borderRadius:8, cursor:"pointer", padding:2, background:"none" }} />
+            <span style={{ fontSize:12, color:t.textSub, fontFamily:"monospace" }}>{editing.text}</span>
+          </div>
+        </div>
+      </div>
+    </ModalShell>
+  );
+
+  return (
+    <ModalShell title="🎨  Personalizar tipos" onClose={onClose} maxWidth={420}
+      footer={<button onClick={onClose} style={{ ...bS, width:"100%" }}>Fechar</button>}
+    >
+      <div style={{ display:"flex", flexDirection:"column", gap:10 }}>
+        {relevant.map(tp => (
+          <div key={tp.id} style={{ display:"flex", alignItems:"center", justifyContent:"space-between", padding:"10px 14px", background:t.pageBg, borderRadius:10, border:`1px solid ${t.border}` }}>
+            <span style={{ background:tp.bg, color:tp.text, padding:"4px 14px", borderRadius:20, fontSize:12, fontWeight:700 }}>{tp.label}</span>
+            <button onClick={()=>setEditing({...tp})} style={{ background:"none", border:`1px solid ${t.border}`, borderRadius:8, padding:"5px 12px", cursor:"pointer", fontSize:12, color:t.textSub, ...FF }}>✏️ Editar cores</button>
+          </div>
+        ))}
+        {relevant.length === 0 && <div style={{ textAlign:"center", color:t.textMuted, padding:20 }}>Nenhum tipo encontrado.</div>}
+      </div>
     </ModalShell>
   );
 }
@@ -1363,6 +1432,7 @@ function PageDetail({ page, initEmployees, user, onBack, onLogout }) {
   const [satPopup,    setSatPopup]    = useState(false);
   const [agendaModal, setAgendaModal] = useState(null);
   const [alertRecord, setAlertRecord] = useState(null);
+  const [tipoEdit,    setTipoEdit]    = useState(null);
   const alertedIds = useRef(new Set());
   const [filters,   setFilters]   = useState({ search:"", status:"Todos", tipo:"Todos", via:"Todos", atendente:"Todos" });
 
@@ -1386,6 +1456,7 @@ function PageDetail({ page, initEmployees, user, onBack, onLogout }) {
   const togglePrio = async id => { const r = records.find(x=>x.id===id); if(r) await setDoc(doc(db,"records",`${page.id}-${id}`), {...r, prioridade:!r.prioridade}); };
   const resolveRecord = async r => { await setDoc(doc(db,"records",`${page.id}-${r.id}`), {...r, status:"Resolvido", pageId:page.id}); setSatPopup(true); };
   const saveAgenda    = async updated => { await setDoc(doc(db,"records",`${page.id}-${updated.id}`), {...updated, pageId:page.id}); setAgendaModal(null); };
+  const saveTipoColor = async tp => { await setDoc(doc(db,"tipos",tp.id), tp); setTipos(prev=>prev.map(x=>x.id===tp.id?tp:x)); };
   const setF = k => v => setFilters(p=>({...p,[k]:v}));
 
   useEffect(() => {
@@ -1542,7 +1613,7 @@ function PageDetail({ page, initEmployees, user, onBack, onLogout }) {
                             : <div style={{ overflow:"hidden", textOverflow:"ellipsis", whiteSpace:"nowrap", color:t.textSub, fontSize:12 }}>{r.contato}</div>
                           }
                         </td>
-                        <td style={{ padding:"9px 12px" }}><TipoBadge tipo={r.tipo} tipoObj={tiposMap[r.tipo]} /></td>
+                        <td style={{ padding:"9px 12px" }}><TipoBadge tipo={r.tipo} tipoObj={tiposMap[r.tipo]} onClick={()=>tiposMap[r.tipo]&&setTipoEdit({...tiposMap[r.tipo]})} /></td>
                         <td style={{ padding:"9px 12px", maxWidth:240 }}><div style={{ overflow:"hidden", textOverflow:"ellipsis", whiteSpace:"nowrap", color:t.textSub }}>{r.descricao}</div></td>
                         <td style={{ padding:"9px 8px", whiteSpace:"nowrap" }}>
                           <button onClick={()=>setModal({mode:"edit",record:r})} title="Editar" style={{ background:"none", border:`1px solid ${t.border}`, cursor:"pointer", borderRadius:7, padding:"4px 8px", fontSize:12, marginRight:4 }}>✏️</button>
@@ -1574,6 +1645,7 @@ function PageDetail({ page, initEmployees, user, onBack, onLogout }) {
       {modal && <RecordModal record={modal.mode==="edit"?modal.record:null} employees={employees} tipos={tipos} pageDepartment={page.department} pageMonth={page.month} pageYear={page.year} onSave={modal.mode==="edit"?editRecord:addRecord} onClose={()=>setModal(null)} currentUser={user} />}
       {confirmId!==null && <ConfirmDialog message="Este registro será excluído permanentemente." onConfirm={delRecord} onCancel={()=>setConfirmId(null)} />}
       {agendaModal && <AgendaModal record={agendaModal} onSave={saveAgenda} onClose={()=>setAgendaModal(null)} />}
+      {tipoEdit    && <TipoColorPanel tipos={tipos} department={page.department} initialTipo={tipoEdit} onSave={tp=>{ saveTipoColor(tp); setTipoEdit(null); }} onClose={()=>setTipoEdit(null)} />}
       {alertRecord && (
         <Overlay z={1200}>
           <div style={{ background:"#fff", borderRadius:20, padding:"28px 32px", maxWidth:400, width:"90%", boxShadow:"0 20px 50px rgba(0,0,0,0.3)", ...FF }}>

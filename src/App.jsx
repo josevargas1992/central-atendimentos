@@ -3695,10 +3695,45 @@ function GestaoComercial({ onBack, onLogout }) {
 
 // ── Página Pública de Relatórios ─────────────────────────────────────
 function PublicReport() {
+  const PASS = "lgkrelatorio123";
+  const [unlocked, setUnlocked] = useState(() => sessionStorage.getItem("rpt_auth") === "1");
+  const [pwInput,  setPwInput]  = useState("");
+  const [pwError,  setPwError]  = useState(false);
   const [reports,  setReports]  = useState([]);
   const [loading,  setLoading]  = useState(true);
   const [selYear,  setSelYear]  = useState(null);
   const [selBim,   setSelBim]   = useState(null);
+
+  const tryUnlock = () => {
+    if (pwInput === PASS) { sessionStorage.setItem("rpt_auth","1"); setUnlocked(true); }
+    else { setPwError(true); setTimeout(() => setPwError(false), 1800); }
+  };
+
+  if (!unlocked) return (
+    <div style={{ minHeight:"100vh", background:"linear-gradient(135deg,#0f172a 0%,#1e3a5f 100%)", display:"flex", alignItems:"center", justifyContent:"center" }}>
+      <div style={{ background:"#fff", borderRadius:16, padding:"40px 36px", width:"100%", maxWidth:360, boxShadow:"0 24px 64px rgba(0,0,0,.35)", textAlign:"center" }}>
+        <div style={{ fontSize:36, marginBottom:12 }}>🔒</div>
+        <h2 style={{ margin:"0 0 6px", fontSize:20, fontWeight:800, color:"#0f172a" }}>Área Restrita</h2>
+        <p style={{ margin:"0 0 24px", fontSize:13, color:"#64748b" }}>Digite a senha para acessar os relatórios.</p>
+        <input
+          type="password" value={pwInput} onChange={e => setPwInput(e.target.value)}
+          onKeyDown={e => e.key === "Enter" && tryUnlock()}
+          placeholder="Senha"
+          autoFocus
+          style={{ width:"100%", padding:"11px 14px", borderRadius:9, border:`2px solid ${pwError?"#ef4444":"#e2e8f0"}`,
+            fontSize:14, outline:"none", fontFamily:"inherit", marginBottom:12,
+            boxSizing:"border-box", transition:"border-color .2s",
+            animation: pwError ? "shake .3s" : "none" }} />
+        {pwError && <p style={{ margin:"-6px 0 10px", fontSize:12, color:"#ef4444" }}>Senha incorreta.</p>}
+        <button onClick={tryUnlock}
+          style={{ width:"100%", padding:"11px", background:"linear-gradient(135deg,#1e3a5f,#3b82f6)", border:"none",
+            borderRadius:9, color:"#fff", fontWeight:700, fontSize:14, cursor:"pointer", fontFamily:"inherit" }}>
+          Entrar
+        </button>
+      </div>
+      <style>{`@keyframes shake{0%,100%{transform:translateX(0)}25%{transform:translateX(-6px)}75%{transform:translateX(6px)}}`}</style>
+    </div>
+  );
 
   useEffect(() => {
     getDocs(collection(db, "relatorios_publicos"))

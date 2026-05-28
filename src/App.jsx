@@ -3529,7 +3529,7 @@ function GestaoComercial({ onBack, onLogout }) {
       {/* Report modal */}
       {showReportModal && (
         <Overlay>
-          <div style={{ background:t.card, borderRadius:16, padding:28, width:"100%", maxWidth:430, boxShadow:"0 20px 60px rgba(0,0,0,.25)" }}>
+          <div style={{ background:t.card, borderRadius:16, padding:28, width:"100%", maxWidth:430, maxHeight:"90vh", overflowY:"auto", boxShadow:"0 20px 60px rgba(0,0,0,.25)" }}>
             <div style={{ display:"flex", alignItems:"center", justifyContent:"space-between", marginBottom:20 }}>
               <h2 style={{ margin:0, fontSize:17, fontWeight:700, color:t.text }}>🖨️ Emitir Relatório</h2>
               <button onClick={() => setShowReportModal(false)} style={{ background:t.btnSecBg, border:"none", borderRadius:8, width:32, height:32, cursor:"pointer", fontSize:16, color:t.text, display:"flex", alignItems:"center", justifyContent:"center" }}>×</button>
@@ -3583,18 +3583,20 @@ function GestaoComercial({ onBack, onLogout }) {
               ))}
             </div>
 
-            <div style={{ display:"flex", gap:10 }}>
-              <button onClick={() => setShowReportModal(false)}
-                style={{ flex:1, padding:"10px", background:t.btnSecBg, border:"none", borderRadius:9, color:t.btnSecText, fontWeight:600, fontSize:13, cursor:"pointer", fontFamily:"inherit" }}>
-                Cancelar
-              </button>
-              <button onClick={generateReport}
-                style={{ flex:2, padding:"10px", background:"linear-gradient(135deg,#0ea5e9,#6366f1)", border:"none", borderRadius:9, color:"#fff", fontWeight:700, fontSize:13, cursor:"pointer", fontFamily:"inherit" }}>
-                🖨️ Emitir Relatório
-              </button>
+            <div style={{ display:"flex", flexDirection:"column", gap:8 }}>
+              <div style={{ display:"flex", gap:8 }}>
+                <button onClick={() => setShowReportModal(false)}
+                  style={{ flex:1, padding:"10px", background:t.btnSecBg, border:"none", borderRadius:9, color:t.btnSecText, fontWeight:600, fontSize:13, cursor:"pointer", fontFamily:"inherit" }}>
+                  Cancelar
+                </button>
+                <button onClick={generateReport}
+                  style={{ flex:2, padding:"10px", background:"linear-gradient(135deg,#0ea5e9,#6366f1)", border:"none", borderRadius:9, color:"#fff", fontWeight:700, fontSize:13, cursor:"pointer", fontFamily:"inherit" }}>
+                  🖨️ Emitir Relatório
+                </button>
+              </div>
               <button onClick={publishReport}
-                style={{ flex:2, padding:"10px", background:"linear-gradient(135deg,#10b981,#059669)", border:"none", borderRadius:9, color:"#fff", fontWeight:700, fontSize:13, cursor:"pointer", fontFamily:"inherit" }}>
-                🌐 Publicar
+                style={{ width:"100%", padding:"10px", background:"linear-gradient(135deg,#10b981,#059669)", border:"none", borderRadius:9, color:"#fff", fontWeight:700, fontSize:13, cursor:"pointer", fontFamily:"inherit" }}>
+                🌐 Publicar na Página de Relatórios
               </button>
             </div>
           </div>

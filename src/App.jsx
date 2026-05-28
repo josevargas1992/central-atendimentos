@@ -1912,9 +1912,11 @@ function buildReportHtml(monthsArr, vendors, collabs, cfg) {
   const fmtBRL = v => { const n=parseFloat(v)||0; return "R$ "+n.toLocaleString("pt-BR",{minimumFractionDigits:2,maximumFractionDigits:2}); };
   const tds  = s => `style="padding:7px 10px;border-bottom:1px solid #f1f5f9;${s||""}"`;
   const ths  = s => `style="padding:7px 10px;background:#f8fafc;font-size:11px;font-weight:700;color:#6366f1;text-transform:uppercase;letter-spacing:.5px;border-bottom:2px solid #e2e8f0;${s||""}"`;
+  const mColW = ms.length <= 1 ? 200 : ms.length <= 2 ? 160 : ms.length <= 4 ? 135 : 115;
+  const mkColgroup = (hasVlbl=false) => `<colgroup>${hasVlbl?`<col style="width:36px">`+`<col/>`:`<col/>`}${ms.map(()=>`<col style="width:${mColW}px">`).join("")}</colgroup>`;
   const thead = first => {
     const cols=ms.map(m=>`<th ${ths("text-align:center;white-space:nowrap")}>${m.label.toUpperCase()}</th>`).join("");
-    return `<thead><tr><th ${ths("min-width:200px")}>${first.toUpperCase()}</th>${cols}</tr></thead>`;
+    return `${mkColgroup()}<thead><tr><th ${ths("")}>${first.toUpperCase()}</th>${cols}</tr></thead>`;
   };
   const dPct = (a, b, inv=false) => {
     const na=parseFloat(String(a??0).replace(/[^0-9.-]/g,"")||"0");
@@ -1946,10 +1948,10 @@ function buildReportHtml(monthsArr, vendors, collabs, cfg) {
   }).join("");
   const colabThead = () => {
     const cols=ms.map(m=>`<th ${ths("text-align:center;white-space:nowrap")}>${m.label.toUpperCase()}</th>`).join("");
-    return `<thead><tr><th ${ths("width:36px;padding:4px")}></th><th ${ths("min-width:180px")}>INDICADOR</th>${cols}</tr></thead>`;
+    return `${mkColgroup(true)}<thead><tr><th ${ths("width:36px;padding:4px")}></th><th ${ths("")}>INDICADOR</th>${cols}</tr></thead>`;
   };
 
-  const css = `*{box-sizing:border-box;margin:0;padding:0}body{font-family:'Segoe UI',Arial,sans-serif;color:#1e293b;background:#fff;font-size:13px;line-height:1.5}.hdr{background:linear-gradient(135deg,#0f172a 0%,#1e3a5f 100%);color:#fff;padding:28px 36px 22px}.hdr h1{font-size:28px;font-weight:900;letter-spacing:-.5px}.hdr .sub{font-size:12px;color:#94a3b8;margin-top:5px}.body{max-width:1100px;margin:0 auto;padding:8px 28px 48px}h2{font-size:13px;font-weight:800;color:#0f172a;padding:10px 16px;background:#f8fafc;border-left:4px solid #6366f1;margin:24px 0 0;text-transform:uppercase;letter-spacing:.6px}table{width:100%;border-collapse:collapse;margin-bottom:0}th{padding:7px 10px;text-align:left;font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.5px;border-bottom:2px solid #e2e8f0}.tblwrap{border:1px solid #e2e8f0;border-radius:8px;overflow:hidden;margin-bottom:16px;margin-top:1px}.vcard{border-radius:10px;overflow:hidden;border:1px solid #e2e8f0;margin-bottom:20px;margin-top:1px}.vcard-hdr{background:#1e293b;color:#fff;padding:10px 16px;display:flex;align-items:center;gap:10px}.vcard-hdr strong{font-size:14px;font-weight:800}.vcard-hdr .code{font-size:11px;color:#94a3b8}.vlbl{writing-mode:vertical-lr;transform:rotate(180deg);text-align:center;font-size:9px;font-weight:800;letter-spacing:.8px;text-transform:uppercase;color:#94a3b8;background:#f8fafc;padding:8px 4px;border-right:1px solid #e2e8f0;white-space:nowrap;width:36px}@media print{body{font-size:11px}.hdr{-webkit-print-color-adjust:exact;print-color-adjust:exact}.vcard{break-inside:avoid;-webkit-print-color-adjust:exact;print-color-adjust:exact}.tblwrap{break-inside:avoid}h2{break-after:avoid}}`;
+  const css = `*{box-sizing:border-box;margin:0;padding:0}body{font-family:'Segoe UI',Arial,sans-serif;color:#1e293b;background:#fff;font-size:13px;line-height:1.5}.hdr{background:linear-gradient(135deg,#0f172a 0%,#1e3a5f 100%);color:#fff;padding:28px 36px 22px}.hdr h1{font-size:28px;font-weight:900;letter-spacing:-.5px}.hdr .sub{font-size:12px;color:#94a3b8;margin-top:5px}.body{max-width:1100px;margin:0 auto;padding:8px 28px 48px}h2{font-size:13px;font-weight:800;color:#0f172a;padding:10px 16px;background:#f8fafc;border-left:4px solid #6366f1;margin:24px 0 0;text-transform:uppercase;letter-spacing:.6px}table{width:100%;border-collapse:collapse;table-layout:fixed;margin-bottom:0}th{padding:7px 10px;text-align:left;font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.5px;border-bottom:2px solid #e2e8f0}.tblwrap{border:1px solid #e2e8f0;border-radius:8px;overflow:hidden;margin-bottom:16px;margin-top:1px}.vcard{border-radius:10px;overflow:hidden;border:1px solid #e2e8f0;margin-bottom:20px;margin-top:1px}.vcard-hdr{background:#1e293b;color:#fff;padding:10px 16px;display:flex;align-items:center;gap:10px}.vcard-hdr strong{font-size:14px;font-weight:800}.vcard-hdr .code{font-size:11px;color:#94a3b8}.vlbl{writing-mode:vertical-lr;transform:rotate(180deg);text-align:center;font-size:9px;font-weight:800;letter-spacing:.8px;text-transform:uppercase;color:#94a3b8;background:#f8fafc;padding:8px 4px;border-right:1px solid #e2e8f0;white-space:nowrap;width:36px}@media print{body{font-size:11px}.hdr{-webkit-print-color-adjust:exact;print-color-adjust:exact}.vcard{break-inside:avoid;-webkit-print-color-adjust:exact;print-color-adjust:exact}.tblwrap{break-inside:avoid}h2{break-after:avoid}}`;
 
   // 1. INDICADORES DO SETOR
   let indSec = "";
@@ -2058,7 +2060,7 @@ function buildReportHtml(monthsArr, vendors, collabs, cfg) {
           {label:"Média de atendimento diário",     fn: mx => { const d=(mx.ind.colab||{})[c.id]||{}; const t=(+d.whatsapp||0)+(+d.tickets||0)+(+d.telefone||0); return d.diasTrab&&+d.diasTrab>0?(t/+d.diasTrab).toFixed(1):""; }},
           {label:"Média de pausas por dia",         fn: mx => { const d=(mx.ind.colab||{})[c.id]||{}; if(!d.pausaTimeTotal||!d.diasTrab||+d.diasTrab===0) return ""; const s=parseTimeToSec(d.pausaTimeTotal); return s>0?secToHHMMSS(Math.round(s/+d.diasTrab)):""; }, noD:true},
         ]);
-        return `<div class="vcard"><div class="vcard-hdr"><strong>${fname}</strong></div><table>${colabThead()}<tbody>${pres}</tbody></table></div><div style="height:4px"></div><div class="vcard"><table><tbody>${atend}</tbody></table></div>`;
+        return `<div class="vcard"><div class="vcard-hdr"><strong>${fname}</strong></div><table>${colabThead()}<tbody>${pres}</tbody></table></div><div style="height:4px"></div><div class="vcard"><table>${mkColgroup(true)}<tbody>${atend}</tbody></table></div>`;
       }).join("");
     };
     colabSec = `<h2>Atendentes - Renovação</h2>${buildCards(renovCollabs)}<h2>Atendentes - Adm &amp; Financeiro</h2>${buildCards(admCollabs)}`;

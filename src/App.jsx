@@ -2583,16 +2583,16 @@ function GestaoComercial({ onBack, onLogout }) {
               {hovX!=null && (()=>{
                 const tx=Math.max(52,Math.min(W-52,toX(hovX)));
                 const vals=seriesDef.map(s=>({color:s.color,label:s.label,val:s.data[hovX]?.val??0}));
-                const bH=vals.length*17+18;
+                const bH=vals.length*14+16;
                 return (
                   <g style={{pointerEvents:"none"}}>
-                    <rect x={tx-46} y={pT+2} width={92} height={bH} rx={7}
+                    <rect x={tx-40} y={pT+2} width={80} height={bH} rx={5}
                       fill={dark?"#0f1e35":"#1e293b"} opacity={0.93}/>
-                    <text x={tx} y={pT+16} textAnchor="middle" fontSize="9" fill="#94a3b8" fontWeight="700">
+                    <text x={tx} y={pT+13} textAnchor="middle" fontSize="7.5" fill="#94a3b8" fontWeight="700">
                       {months[hovX]?.label}
                     </text>
                     {vals.map((v,vi)=>(
-                      <text key={vi} x={tx} y={pT+16+(vi+1)*17} textAnchor="middle" fontSize="9.5" fill={v.color} fontWeight="700">
+                      <text key={vi} x={tx} y={pT+13+(vi+1)*14} textAnchor="middle" fontSize="8" fill={v.color} fontWeight="700">
                         {v.label}: {v.val}{suffix}
                       </text>
                     ))}
@@ -2652,9 +2652,9 @@ function GestaoComercial({ onBack, onLogout }) {
                       stroke={color} strokeWidth={1} vectorEffect="non-scaling-stroke"/>
                     {isHov&&(
                       <g style={{pointerEvents:"none"}}>
-                        <rect x={tx-24} y={p.y-36} width={48} height={20} rx={5} fill={dark?"#0f1e35":"#1e293b"} opacity={0.93}/>
-                        <polygon points={`${tx-5},${p.y-16} ${tx+5},${p.y-16} ${tx},${p.y-8}`} fill={dark?"#0f1e35":"#1e293b"} opacity={0.93}/>
-                        <text x={tx} y={p.y-22} textAnchor="middle" fontSize="10" fontWeight="800" fill={color}>{p.val}{suffix}</text>
+                        <rect x={tx-18} y={p.y-28} width={36} height={14} rx={4} fill={dark?"#0f1e35":"#1e293b"} opacity={0.93}/>
+                        <polygon points={`${tx-4},${p.y-14} ${tx+4},${p.y-14} ${tx},${p.y-7}`} fill={dark?"#0f1e35":"#1e293b"} opacity={0.93}/>
+                        <text x={tx} y={p.y-18} textAnchor="middle" fontSize="7" fontWeight="700" fill={color}>{p.val}{suffix}</text>
                       </g>
                     )}
                     {isCur&&!isHov&&<text x={p.x} y={p.y-12} textAnchor="middle" fontSize="9" fill={color} fontWeight="800">{p.val}{suffix}</text>}

@@ -3421,6 +3421,8 @@ function GestaoComercial({ onBack, onLogout }) {
         </div>
       </div>
 
+      {presenceEmps.length > 0 && <div style={{ padding:"6px 18px", flexShrink:0, background:"#0f172a" }}><PresenceBar employees={presenceEmps} /></div>}
+
       {/* Body */}
       <div style={{ display:"flex", flex:1, overflow:"hidden" }}>
 
@@ -3439,8 +3441,6 @@ function GestaoComercial({ onBack, onLogout }) {
 
         {/* Main */}
         <div style={{ flex:1, display:"flex", flexDirection:"column", overflow:"hidden" }}>
-
-          {presenceEmps.length > 0 && <div style={{ padding:"6px 18px", flexShrink:0 }}><PresenceBar employees={presenceEmps} /></div>}
 
           {/* Year + Month bar */}
           <div style={{ background:"#1a2535", borderBottom:"1px solid #0f172a", flexShrink:0 }}>

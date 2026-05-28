@@ -3704,6 +3704,19 @@ function PublicReport() {
   const [selYear,  setSelYear]  = useState(null);
   const [selBim,   setSelBim]   = useState(null);
 
+  useEffect(() => {
+    if (!unlocked) return;
+    getDocs(collection(db, "relatorios_publicos"))
+      .then(snap => {
+        const data = snap.docs.map(d => ({ id: d.id, ...d.data() }))
+          .sort((a, b) => b.year - a.year || b.bimestre - a.bimestre);
+        setReports(data);
+        if (data.length) { setSelYear(data[0].year); setSelBim(data[0].bimestre); }
+      })
+      .catch(() => {})
+      .finally(() => setLoading(false));
+  }, [unlocked]);
+
   const tryUnlock = () => {
     if (pwInput === PASS) { sessionStorage.setItem("rpt_auth","1"); setUnlocked(true); }
     else { setPwError(true); setTimeout(() => setPwError(false), 1800); }
@@ -3734,18 +3747,6 @@ function PublicReport() {
       <style>{`@keyframes shake{0%,100%{transform:translateX(0)}25%{transform:translateX(-6px)}75%{transform:translateX(6px)}}`}</style>
     </div>
   );
-
-  useEffect(() => {
-    getDocs(collection(db, "relatorios_publicos"))
-      .then(snap => {
-        const data = snap.docs.map(d => ({ id: d.id, ...d.data() }))
-          .sort((a, b) => b.year - a.year || b.bimestre - a.bimestre);
-        setReports(data);
-        if (data.length) { setSelYear(data[0].year); setSelBim(data[0].bimestre); }
-      })
-      .catch(() => {})
-      .finally(() => setLoading(false));
-  }, []);
 
   const BIM_LABELS  = ["1°","2°","3°","4°","5°","6°"];
   const BIM_MONTHS  = [["Jan","Fev"],["Mar","Abr"],["Mai","Jun"],["Jul","Ago"],["Set","Out"],["Nov","Dez"]];

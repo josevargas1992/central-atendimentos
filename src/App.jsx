@@ -3726,11 +3726,15 @@ function PublicReport() {
 
   const download = () => {
     if (!selected) return;
-    const win = window.open("", "_blank");
-    if (!win) { alert("Popup bloqueado — libere popups para este site e tente novamente."); return; }
-    win.document.write(selected.html);
-    win.document.close();
-    setTimeout(() => { try { win.print(); } catch {} }, 600);
+    const iframe = document.createElement("iframe");
+    iframe.style.cssText = "position:fixed;width:0;height:0;opacity:0;border:none;pointer-events:none";
+    document.body.appendChild(iframe);
+    iframe.contentDocument.write(selected.html);
+    iframe.contentDocument.close();
+    setTimeout(() => {
+      try { iframe.contentWindow.focus(); iframe.contentWindow.print(); } catch {}
+      setTimeout(() => document.body.removeChild(iframe), 2000);
+    }, 600);
   };
 
   if (loading) return (

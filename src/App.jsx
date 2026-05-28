@@ -1,6 +1,7 @@
-import { useState, useEffect, useRef, createContext, useContext } from "react";
-import { collection, doc, getDocs, setDoc, deleteDoc, writeBatch, query, where, onSnapshot } from "firebase/firestore";
+﻿import { useState, useEffect, useRef, createContext, useContext } from "react";
+import { collection, doc, getDocs, getDoc, setDoc, deleteDoc, writeBatch, query, where, onSnapshot } from "firebase/firestore";
 import { db } from "./firebase";
+import * as XLSX from "xlsx";
 
 // ── Constants ─────────────────────────────────────────────────────────
 
@@ -754,7 +755,7 @@ function EmployeeModal({ employee, departments=[], onSave, onClose }) {
 
 // ── Admin Panel ───────────────────────────────────────────────────────
 
-function AdminPanel({ onBack }) {
+function AdminPanel({ onBack, onGestao }) {
   const { t } = useTheme();
   const [tab,         setTab]         = useState("planilhas");
   const [employees,   setEmployees]   = useState([]);
@@ -883,6 +884,7 @@ function AdminPanel({ onBack }) {
         </div>
         <div style={{ display:"flex", alignItems:"center", gap:14 }}>
           <DarkToggle />
+          <button onClick={onGestao} style={{ background:"rgba(255,255,255,0.07)", border:"1px solid rgba(96,165,250,0.4)", color:"#93c5fd", borderRadius:8, padding:"6px 12px", cursor:"pointer", fontSize:12, fontWeight:600, ...FF }}>📊 Gestão Comercial</button>
           {tab === "planilhas" && <button onClick={()=>setModal({mode:"add",type:"page"})} style={{ padding:"8px 18px", background:"linear-gradient(135deg,#0ea5e9,#6366f1)", border:"none", borderRadius:9, color:"#fff", fontWeight:700, fontSize:14, cursor:"pointer", ...FF }}>+ Nova Planilha</button>}
           {tab === "atendentes" && <button onClick={()=>setModal({mode:"add",type:"emp"})}  style={{ padding:"8px 18px", background:"linear-gradient(135deg,#0ea5e9,#6366f1)", border:"none", borderRadius:9, color:"#fff", fontWeight:700, fontSize:14, cursor:"pointer", ...FF }}>+ Novo Atendente</button>}
           {tab === "tipos"         && <button onClick={()=>setModal({mode:"add",type:"tipo"})} style={{ padding:"8px 18px", background:"linear-gradient(135deg,#0ea5e9,#6366f1)", border:"none", borderRadius:9, color:"#fff", fontWeight:700, fontSize:14, cursor:"pointer", ...FF }}>+ Novo Tipo</button>}
@@ -1347,7 +1349,7 @@ function PresenceBar({ employees }) {
 
 // ── Home Screen ───────────────────────────────────────────────────────
 
-function HomeScreen({ user, onOpenPage, onLogout }) {
+function HomeScreen({ user, onOpenPage, onLogout, onGestao }) {
   const { t } = useTheme();
   const [employees, setEmployees] = useState([]);
   const [pages,     setPages]     = useState([]);
@@ -1386,6 +1388,9 @@ function HomeScreen({ user, onOpenPage, onLogout }) {
             <Avatar name={user.name} color={user.color||"#6366f1"} size={30} />
             <span style={{ color:"#cbd5e1", fontWeight:500, fontSize:13 }}>{user.name}</span>
           </div>
+          {user.id === "admin" && (
+            <button onClick={onGestao} style={{ background:"rgba(255,255,255,0.07)", border:"1px solid rgba(96,165,250,0.4)", color:"#93c5fd", borderRadius:8, padding:"6px 12px", cursor:"pointer", fontSize:12, fontWeight:600, ...FF }}>📊 Gestão</button>
+          )}
           <button onClick={onLogout} style={{ background:"rgba(255,255,255,0.07)", border:"1px solid rgba(255,255,255,0.1)", color:"#94a3b8", borderRadius:8, padding:"6px 12px", cursor:"pointer", fontSize:12, ...FF }}>Sair</button>
         </div>
       </div>
@@ -1767,7 +1772,6 @@ function LoginScreen({ onLogin, onAdmin }) {
             </Field>
             {admErr && <p style={{ color:"#f87171", fontSize:13, margin:"-8px 0 16px", fontWeight:500 }}>{admErr}</p>}
             <button onClick={attemptAdmin} style={{ width:"100%", padding:13, background:"linear-gradient(135deg,#f59e0b,#ef4444)", border:"none", borderRadius:10, color:"#fff", fontWeight:700, fontSize:15, cursor:"pointer", ...FF }}>Entrar como Administrador →</button>
-            <p style={{ color:t.senhaHint, fontSize:12, textAlign:"center", marginTop:14 }}>Senha padrão: <code style={{ background:t.codeSnippetBg, padding:"1px 6px", borderRadius:4, color:t.codeSnippetText }}>{ADMIN_CRED.password}</code></p>
           </div>
 
         ) : (
@@ -1795,6 +1799,1848 @@ function LoginScreen({ onLogin, onAdmin }) {
 }
 
 // ── Root App ──────────────────────────────────────────────────────────
+
+// ── Gestão Comercial helpers ──────────────────────────────────────────
+
+function gcKey(d = new Date()) {
+  return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,"0")}`;
+}
+function gcFmt(k) {
+  const [y, m] = k.split("-");
+  return `${MONTHS[+m-1].slice(0,3)}/${y}`;
+}
+function gcMonths(n = 12) {
+  const r = [], d = new Date();
+  for (let i = 0; i < n; i++) { r.unshift(gcKey(new Date(d))); d.setMonth(d.getMonth()-1); }
+  return r;
+}
+function gcGetVal(obj, path, key) {
+  let cur = obj || {};
+  for (const p of path.split(".")) { if (cur[p] == null) return ""; cur = cur[p]; }
+  return cur[key] ?? "";
+}
+function gcSet(obj, path, key, value) {
+  const parts = path ? path.split(".") : [];
+  const res = { ...obj };
+  let cur = res;
+  for (const p of parts) { cur[p] = { ...(cur[p] || {}) }; cur = cur[p]; }
+  cur[key] = value;
+  return res;
+}
+function gcPct(a, b) {
+  return (!a || !b || +b === 0) ? "0.0" : ((+a / +b) * 100).toFixed(1);
+}
+function gcFmtBRL(val) {
+  if (val === "" || val == null) return "";
+  const n = parseFloat(String(val));
+  if (isNaN(n)) return "";
+  return n.toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
+}
+function gcParseBRL(str) {
+  const digits = String(str).replace(/\D/g, "");
+  if (!digits) return "";
+  return String(parseInt(digits, 10) / 100);
+}
+function gcFmtBRLLive(inputVal) {
+  const digits = String(inputVal).replace(/\D/g, "");
+  if (!digits) return "";
+  return (parseInt(digits, 10) / 100).toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
+}
+function parseTimeToSec(t) {
+  const s = String(t || "").trim();
+  const m = s.match(/^(\d+):(\d+):(\d+)$/);
+  if (m) return +m[1]*3600 + +m[2]*60 + +m[3];
+  const n = parseFloat(s); return isNaN(n) ? 0 : Math.round(n);
+}
+function secToHHMMSS(s) {
+  const h = Math.floor(s/3600), mi = Math.floor((s%3600)/60), sec = Math.floor(s%60);
+  return `${String(h).padStart(2,"0")}:${String(mi).padStart(2,"0")}:${String(sec).padStart(2,"0")}`;
+}
+function xlTime(val) {
+  // Excel stores times as day fractions (e.g. 0.0451 ≈ 65 min); strings come as "HH:MM:SS"
+  if (val == null || val === "") return 0;
+  if (typeof val === "number") return Math.round(val * 86400);
+  return parseTimeToSec(val);
+}
+
+// ── Report HTML builder ───────────────────────────────────────────────
+
+// monthsArr: [{ key:"2026-01", label:"Jan/26", data:{...} }, ...]
+function buildReportHtml(monthsArr, vendors, collabs, cfg) {
+  const { sections } = cfg;
+  const MN_FULL = ["Janeiro","Fevereiro","Março","Abril","Maio","Junho","Julho","Agosto","Setembro","Outubro","Novembro","Dezembro"];
+  const MN_SHORT = ["Jan","Fev","Mar","Abr","Mai","Jun","Jul","Ago","Set","Out","Nov","Dez"];
+  const emitDate = new Date().toLocaleString("pt-BR", { day:"2-digit", month:"2-digit", year:"numeric", hour:"2-digit", minute:"2-digit" });
+  const year  = monthsArr[0]?.key.split("-")[0] ?? "";
+  const periodLabel = monthsArr.length === 1
+    ? `${MN_FULL[+monthsArr[0].key.split("-")[1]-1]} ${year}`
+    : monthsArr.map(m => MN_SHORT[+m.key.split("-")[1]-1]).join(", ") + " / " + year;
+
+  const mxFn = (d) => {
+    const ind=d.indicadores||{}, met=d.metas||{}, ren=ind.renovacao||{},
+          vnd=ind.vendas||{}, inad=ind.inadimplencia||{}, leads=ind.leads||{};
+    const rT=+ren.totais||0;
+    const telGTime = gcGetVal(d,"telefonia.geral","tempoMedio")||"";
+    const telATime = gcGetVal(d,"telefonia.administrativo","tempoMedio")||"";
+    const telG = +gcGetVal(d,"telefonia.geral","recebidas")||0;
+    const telA = +gcGetVal(d,"telefonia.administrativo","recebidas")||0;
+    const tmaGSec = telG>0&&telGTime ? Math.round(parseTimeToSec(telGTime)/telG) : 0;
+    const tmaASec = telA>0&&telATime ? Math.round(parseTimeToSec(telATime)/telA) : 0;
+    const telGSec = parseTimeToSec(telGTime)||0;
+    const telASec = parseTimeToSec(telATime)||0;
+    return {
+      ind, met, ren, vnd, inad, leads, renovTot:rT,
+      renovReal: rT>0 ? +((+ren.realizadas||0)/rT*100).toFixed(1) : null,
+      churnReal: rT>0 ? +((+ren.canceladas||0)/rT*100).toFixed(1) : null,
+      novasAss: +vnd.novasAss||0,
+      novasAssCanceladas: +vnd.novasAssCanceladas||0,
+      valorTotalNovas: +vnd.valorTotalNovas||0,
+      ticketMedio: (+vnd.novasAss||0)>0 ? (+vnd.valorTotalNovas||0)/(+vnd.novasAss) : null,
+      satReal: +met.satReal||0,
+      waG: +gcGetVal(d,"indicadores.atenGeral","whatsapp")||0,
+      waA: +gcGetVal(d,"indicadores.atenAdm","whatsapp")||0,
+      tkG: +gcGetVal(d,"indicadores.atenGeral","tickets")||0,
+      tkA: +gcGetVal(d,"indicadores.atenAdm","tickets")||0,
+      telG, telA, telGTime, telATime,
+      tmaG: tmaGSec>0 ? secToHHMMSS(tmaGSec) : "",
+      tmaA: tmaASec>0 ? secToHHMMSS(tmaASec) : "",
+      telTotalTime: (telGSec+telASec)>0 ? secToHHMMSS(telGSec+telASec) : "",
+    };
+  };
+  const ms = monthsArr.map(m => ({ ...m, mx: mxFn(m.data) }));
+
+  const fmtBRL = v => { const n=parseFloat(v)||0; return "R$ "+n.toLocaleString("pt-BR",{minimumFractionDigits:2,maximumFractionDigits:2}); };
+  const tds  = s => `style="padding:7px 10px;border-bottom:1px solid #f1f5f9;${s||""}"`;
+  const ths  = s => `style="padding:7px 10px;background:#f8fafc;font-size:11px;font-weight:700;color:#6366f1;text-transform:uppercase;letter-spacing:.5px;border-bottom:2px solid #e2e8f0;${s||""}"`;
+  const thead = first => {
+    const cols=ms.map(m=>`<th ${ths("text-align:center;white-space:nowrap")}>${m.label.toUpperCase()}</th>`).join("");
+    return `<thead><tr><th ${ths("min-width:200px")}>${first.toUpperCase()}</th>${cols}</tr></thead>`;
+  };
+  const dPct = (a, b, inv=false) => {
+    const na=parseFloat(String(a??0).replace(/[^0-9.-]/g,"")||"0");
+    const nb=parseFloat(String(b??0).replace(/[^0-9.-]/g,"")||"0");
+    if (!na&&!nb) return ""; if (!na) return "";
+    const p=+((nb-na)/Math.abs(na)*100).toFixed(1);
+    const ok=inv?p<=0:p>=0;
+    const c=Math.abs(p)<0.05?"#94a3b8":ok?"#22c55e":"#ef4444";
+    return `<br><span style="font-size:10px;font-weight:700;color:${c}">${p>0?"+":""}${p}%</span>`;
+  };
+  const compRow = (label, getFn, inv=false, bold=false, noD=false) => {
+    const vals=ms.map((m,i) => {
+      const v=getFn(m.mx); const s=(v!=null&&v!=="") ? String(v) : "";
+      const d=(!noD&&ms.length>1&&s)?(i===0?`<br><span style="font-size:10px;color:#cbd5e1">-</span>`:dPct(getFn(ms[0].mx),v,inv)):"";
+      return `<td ${tds("text-align:center;"+(bold?"font-weight:700;":""))}>${s}${d}</td>`;
+    }).join("");
+    return `<tr><td ${tds("color:#64748b;font-size:12px")}>${label}</td>${vals}</tr>`;
+  };
+  const vSection = (lbl, items) => items.map((it,idx) => {
+    const vals=ms.map((m,i) => {
+      const v=it.fn(m.mx); const s=(v!=null&&v!=="") ? String(v) : "";
+      const d=(!it.noD&&ms.length>1&&s)?(i===0?`<br><span style="font-size:10px;color:#cbd5e1">-</span>`:dPct(it.fn(ms[0].mx),v,it.inv||false)):"";
+      return `<td ${tds("text-align:center;"+(it.bold?"font-weight:700;":""))}>${s}${d}</td>`;
+    }).join("");
+    const lTd=`<td ${tds("color:#64748b;font-size:12px")}>${it.label}</td>`;
+    return idx===0
+      ? `<tr><td rowspan="${items.length}" class="vlbl">${lbl}</td>${lTd}${vals}</tr>`
+      : `<tr>${lTd}${vals}</tr>`;
+  }).join("");
+  const colabThead = () => {
+    const cols=ms.map(m=>`<th ${ths("text-align:center;white-space:nowrap")}>${m.label.toUpperCase()}</th>`).join("");
+    return `<thead><tr><th ${ths("width:36px;padding:4px")}></th><th ${ths("min-width:180px")}>INDICADOR</th>${cols}</tr></thead>`;
+  };
+
+  const css = `*{box-sizing:border-box;margin:0;padding:0}body{font-family:'Segoe UI',Arial,sans-serif;color:#1e293b;background:#fff;font-size:13px;line-height:1.5}.hdr{background:linear-gradient(135deg,#0f172a 0%,#1e3a5f 100%);color:#fff;padding:28px 36px 22px}.hdr h1{font-size:28px;font-weight:900;letter-spacing:-.5px}.hdr .sub{font-size:12px;color:#94a3b8;margin-top:5px}.body{max-width:1100px;margin:0 auto;padding:8px 28px 48px}h2{font-size:13px;font-weight:800;color:#0f172a;padding:10px 16px;background:#f8fafc;border-left:4px solid #6366f1;margin:24px 0 0;text-transform:uppercase;letter-spacing:.6px}table{width:100%;border-collapse:collapse;margin-bottom:0}th{padding:7px 10px;text-align:left;font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.5px;border-bottom:2px solid #e2e8f0}.tblwrap{border:1px solid #e2e8f0;border-radius:8px;overflow:hidden;margin-bottom:16px;margin-top:1px}.vcard{border-radius:10px;overflow:hidden;border:1px solid #e2e8f0;margin-bottom:20px;margin-top:1px}.vcard-hdr{background:#1e293b;color:#fff;padding:10px 16px;display:flex;align-items:center;gap:10px}.vcard-hdr strong{font-size:14px;font-weight:800}.vcard-hdr .code{font-size:11px;color:#94a3b8}.vlbl{writing-mode:vertical-lr;transform:rotate(180deg);text-align:center;font-size:9px;font-weight:800;letter-spacing:.8px;text-transform:uppercase;color:#94a3b8;background:#f8fafc;padding:8px 4px;border-right:1px solid #e2e8f0;white-space:nowrap}@media print{body{font-size:11px}.hdr{-webkit-print-color-adjust:exact;print-color-adjust:exact}.vcard{break-inside:avoid;-webkit-print-color-adjust:exact;print-color-adjust:exact}.tblwrap{break-inside:avoid}h2{break-after:avoid}}`;
+
+  // 1. INDICADORES DO SETOR
+  let indSec = "";
+  if (sections.metas) {
+    indSec = `<h2>Indicadores do Setor</h2><div class="tblwrap"><table>${thead("Indicadores")}<tbody>${[
+      compRow("Novas assinaturas",      mx => mx.novasAss||""),
+      compRow("Taxa de Renovação",      mx => mx.renovReal!=null?mx.renovReal+"%":""),
+      compRow("Taxa de Churn",          mx => mx.churnReal!=null?mx.churnReal+"%":"", true),
+      compRow("Satisfação do Cliente",  mx => mx.satReal?mx.satReal+"%":""),
+    ].join("")}</tbody></table></div>`;
+  }
+
+  // 2–5. COMERCIAL / LEADS / RENOVAÇÃO / INADIMPLENTES
+  let comSec = "";
+  if (sections.comercial) {
+    const comRows = [
+      compRow("Novas assinaturas",               mx => mx.novasAss||""),
+      compRow("Novas assinaturas Canceladas",     mx => mx.novasAssCanceladas||""),
+      compRow("Valor total em novas assinaturas", mx => mx.valorTotalNovas>0?fmtBRL(mx.valorTotalNovas):""),
+      compRow("Ticket médio Total",               mx => mx.ticketMedio?fmtBRL(mx.ticketMedio):""),
+    ].join("");
+    const leadsRows = [
+      compRow("Total de leads",                mx => mx.leads.totais||""),
+      compRow("Leads qualificados",            mx => mx.leads.qualificados||""),
+      compRow("Leads convertidos no período",  mx => mx.leads.convertidos||""),
+    ].join("");
+    const renovRows = [
+      compRow("Geradas",     mx => mx.ren.geradas||""),
+      compRow("Totais",      mx => mx.renovTot||""),
+      compRow("Pagas",       mx => mx.ren.realizadas||""),
+      compRow("Canceladas",  mx => mx.ren.canceladas||""),
+      compRow("Desativadas", mx => mx.ren.desativadas||""),
+    ].join("");
+    const inadRows = [
+      compRow("Total",         mx => mx.inad.totais||""),
+      compRow("Regularizados", mx => mx.inad.regularizadas||""),
+      compRow("Em Aberto",     mx => mx.inad.emAberto||""),
+      compRow("Cancelamentos", mx => mx.inad.canceladas||""),
+    ].join("");
+    comSec = `<h2>Comercial</h2><div class="tblwrap"><table>${thead("Indicadores")}<tbody>${comRows}</tbody></table></div><h2>Leads Trabalhados</h2><div class="tblwrap"><table>${thead("Indicadores")}<tbody>${leadsRows}</tbody></table></div><h2>Renovação</h2><div class="tblwrap"><table>${thead("Indicadores")}<tbody>${renovRows}</tbody></table></div><h2>Inadimplentes</h2><div class="tblwrap"><table>${thead("Indicadores")}<tbody>${inadRows}</tbody></table></div>`;
+  }
+
+  // 6–8. ATENDIMENTOS (consolidado / renovação / adm)
+  let atenSec = "";
+  if (sections.atendimentos) {
+    const mkAten = (waFn, tkFn, telFn, timeFn) => [
+      compRow("WhatsApp",           waFn),
+      compRow("Tickets",            tkFn),
+      compRow("Telefone",           telFn),
+      compRow("Total em ligações",  timeFn, false, false, true),
+    ].join("");
+    atenSec =
+      `<h2>Atendimentos</h2><div class="tblwrap"><table>${thead("Indicadores")}<tbody>${mkAten(mx=>(mx.waG+mx.waA)||"",mx=>(mx.tkG+mx.tkA)||"",mx=>(mx.telG+mx.telA)||"",mx=>mx.telTotalTime||"")}</tbody></table></div>` +
+      `<h2>Atendimentos (Renovação)</h2><div class="tblwrap"><table>${thead("Indicadores")}<tbody>${mkAten(mx=>mx.waG||"",mx=>mx.tkG||"",mx=>mx.telG||"",mx=>mx.telGTime||"")}</tbody></table></div>` +
+      `<h2>Atendimentos (Adm &amp; Financeiro)</h2><div class="tblwrap"><table>${thead("Indicadores")}<tbody>${mkAten(mx=>mx.waA||"",mx=>mx.tkA||"",mx=>mx.telA||"",mx=>mx.telATime||"")}</tbody></table></div>`;
+  }
+
+  // 9. VENDEDORES
+  let vendSec = "";
+  if (sections.vendedores) {
+    if (!vendors.length) {
+      vendSec = `<h2>Vendedores</h2><p style="color:#94a3b8;font-style:italic;padding:12px 0">Nenhum vendedor cadastrado.</p>`;
+    } else {
+      const vcards = vendors.map(v => {
+        const fname=`${v.name}${v.surname?" "+v.surname:""}`;
+        const code=v.codigo?`<span class="code">(${v.codigo})</span>`:"";
+        const rows=[
+          compRow("Venda nova (R$)",        mx => { const d=(mx.ind.vendedores||{})[v.id]||{}; return d.valor?fmtBRL(d.valor):""; }),
+          compRow("Cross Venda (R$)",        mx => { const d=(mx.ind.vendedores||{})[v.id]||{}; return d.valorCrossSell?fmtBRL(d.valorCrossSell):""; }),
+          compRow("Lead's trabalhados",      mx => { const d=(mx.ind.vendedores||{})[v.id]||{}; return d.leadsTrab||""; }),
+          compRow("Lead's desqualificados",  mx => { const d=(mx.ind.vendedores||{})[v.id]||{}; return d.leadsDesq||""; }),
+          compRow("Lead's convertidos",      mx => { const d=(mx.ind.vendedores||{})[v.id]||{}; return d.leadsConv||""; }),
+          compRow("Ticket médio",            mx => { const d=(mx.ind.vendedores||{})[v.id]||{}; return d.valor&&+d.leadsConv>0?fmtBRL(+d.valor/+d.leadsConv):""; }),
+        ].join("");
+        return `<div class="vcard"><div class="vcard-hdr"><strong>${fname}</strong>${code}</div><div><table>${thead("Indicadores")}<tbody>${rows}</tbody></table></div></div>`;
+      }).join("");
+      vendSec = `<h2>Vendedores</h2>${vcards}`;
+    }
+  }
+
+  // 10–11. ATENDENTES (renovação / adm)
+  let colabSec = "";
+  if (sections.colaboradores) {
+    const renovCollabs = collabs.filter(c => c.dept !== "administrativo");
+    const admCollabs   = collabs.filter(c => c.dept === "administrativo");
+    const buildCards = list => {
+      if (!list.length) return `<p style="color:#94a3b8;font-style:italic;padding:12px 0">Nenhum colaborador neste departamento.</p>`;
+      return list.map(c => {
+        const fname=`${c.name}${c.surname?" "+c.surname:""}`;
+        const pres = vSection("PRESENÇA", [
+          {label:"Dias trabalhados",          fn: mx => { const d=(mx.ind.colab||{})[c.id]||{}; return d.diasTrab||""; }},
+          {label:"Faltas sem justificativas",  fn: mx => { const d=(mx.ind.colab||{})[c.id]||{}; return d.faltasSemJust||""; }},
+          {label:"Atrasos",                    fn: mx => { const d=(mx.ind.colab||{})[c.id]||{}; return d.atrasos||""; }},
+          {label:"Atestados",                  fn: mx => { const d=(mx.ind.colab||{})[c.id]||{}; return d.atestados||""; }},
+          {label:"Saídas autorizadas",         fn: mx => { const d=(mx.ind.colab||{})[c.id]||{}; return d.saidasAut||""; }},
+          {label:"Férias",                     fn: mx => { const d=(mx.ind.colab||{})[c.id]||{}; return d.ferias||""; }},
+        ]);
+        const atend = vSection("ATENDIMENTOS", [
+          {label:"WhatsApp",                        fn: mx => { const d=(mx.ind.colab||{})[c.id]||{}; return d.whatsapp||""; }},
+          {label:"Tickets",                         fn: mx => { const d=(mx.ind.colab||{})[c.id]||{}; return d.tickets||""; }},
+          {label:"Telefone",                        fn: mx => { const d=(mx.ind.colab||{})[c.id]||{}; return d.telefone||""; }},
+          {label:"Pausas",                          fn: mx => { const d=(mx.ind.colab||{})[c.id]||{}; return d.pausas||""; }},
+          {label:"Tempo médio em ligações",         fn: mx => { const d=(mx.ind.colab||{})[c.id]||{}; return d.mediaLigacao||""; }, noD:true},
+          {label:"Tempo total em ligações",         fn: mx => { const d=(mx.ind.colab||{})[c.id]||{}; return d.talkTime||""; }, noD:true},
+          {label:"Total de atendimentos",           fn: mx => { const d=(mx.ind.colab||{})[c.id]||{}; return ((+d.whatsapp||0)+(+d.tickets||0)+(+d.telefone||0))||""; }, bold:true},
+          {label:"Média de atendimento diário",     fn: mx => { const d=(mx.ind.colab||{})[c.id]||{}; const t=(+d.whatsapp||0)+(+d.tickets||0)+(+d.telefone||0); return d.diasTrab&&+d.diasTrab>0?(t/+d.diasTrab).toFixed(1):""; }},
+          {label:"Média de pausas por dia",         fn: mx => { const d=(mx.ind.colab||{})[c.id]||{}; if(!d.pausaTimeTotal||!d.diasTrab||+d.diasTrab===0) return ""; const s=parseTimeToSec(d.pausaTimeTotal); return s>0?secToHHMMSS(Math.round(s/+d.diasTrab)):""; }, noD:true},
+        ]);
+        return `<div class="vcard"><div class="vcard-hdr"><strong>${fname}</strong></div><table>${colabThead()}<tbody>${pres}${atend}</tbody></table></div>`;
+      }).join("");
+    };
+    colabSec = `<h2>Atendentes - Renovação</h2>${buildCards(renovCollabs)}<h2>Atendentes - Adm &amp; Financeiro</h2>${buildCards(admCollabs)}`;
+  }
+
+  return `<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<title>Relatório Comercial</title>
+<style>${css}</style>
+</head>
+<body>
+<div class="hdr">
+  <h1>Relatório <span style="color:#60a5fa">Comercial</span></h1>
+  <div class="sub">Período: ${periodLabel} &middot; Emitido em ${emitDate}</div>
+</div>
+<div class="body">
+${indSec}${comSec}${atenSec}${vendSec}${colabSec}
+</div>
+</body>
+</html>`;
+}
+
+// ── Gestão Comercial ──────────────────────────────────────────────────
+
+function GestaoComercial({ onBack, onLogout }) {
+  const { t, dark, toggle } = useTheme();
+  const [curSec,  setCurSec]  = useState("metas");
+  const [curMonth,setCurMonth]= useState(gcKey());
+  const [availYears,setAvailYears] = useState(() => { const y = new Date().getFullYear(); return [y-1, y]; });
+  const [vendors, setVendors] = useState([]);
+  const [collabs, setCollabs] = useState([]);
+  const [md,      setMd]      = useState({});
+  const [mdKey,      setMdKey]      = useState(0);
+  const [monthsData, setMonthsData] = useState({});
+  const [dashHover,  setDashHover]  = useState(null);
+  const [loading, setLoading] = useState(true);
+  const [gcToast, setGCToast] = useState("");
+  const [showReportModal, setShowReportModal] = useState(false);
+  const [reportCfg, setReportCfg] = useState(() => {
+    const now = new Date();
+    return { year:now.getFullYear(), months:[now.getMonth()+1], sections:{ metas:true, comercial:true, vendedores:true, atendimentos:true, colaboradores:true } };
+  });
+  const [indTab,  setIndTab]  = useState("comercial");
+  const [addModal,setAddModal]= useState(null);
+  const [confDel, setConfDel] = useState(null);
+  const [newName,    setNewName]    = useState("");
+  const [newSurname, setNewSurname] = useState("");
+  const [newDept,    setNewDept]    = useState("geral");
+  const [editColab,      setEditColab]      = useState(null);
+  const [editData,       setEditData]       = useState({ name:"", surname:"", dept:"geral" });
+  const [editVendor,      setEditVendor]      = useState(null);
+  const [editVendorData,  setEditVendorData]  = useState({ name:"", surname:"", codigo:"", regime:"clt", comissao:"" });
+  const [newVendorSurname,  setNewVendorSurname]  = useState("");
+  const [newVendorCodigo,   setNewVendorCodigo]   = useState("");
+  const [newVendorRegime,   setNewVendorRegime]   = useState("clt");
+  const [newVendorComissao, setNewVendorComissao] = useState("");
+  const toastRef   = useRef(null);
+  const xlsxRef    = useRef(null);
+
+  const curYear     = parseInt(curMonth.split("-")[0]);
+  const curMonthNum = parseInt(curMonth.split("-")[1]);
+
+  useEffect(() => {
+    if (!availYears.includes(curYear))
+      setAvailYears(prev => [...prev, curYear].sort((a,b) => a-b));
+  }, [curYear]);
+
+  const showGCToast = msg => {
+    setGCToast(msg);
+    clearTimeout(toastRef.current);
+    toastRef.current = setTimeout(() => setGCToast(""), 2200);
+  };
+
+  useEffect(() => {
+    (async () => {
+      const [vs, cs] = await Promise.all([
+        getDocs(collection(db, "gc_vendors")),
+        getDocs(collection(db, "gc_collabs"))
+      ]);
+      setVendors(vs.docs.map(d => d.data()).sort((a,b) => a.name.localeCompare(b.name)));
+      setCollabs(cs.docs.map(d => d.data()).sort((a,b) => a.name.localeCompare(b.name)));
+      setLoading(false);
+    })();
+  }, []);
+
+  useEffect(() => {
+    (async () => {
+      const snap = await getDoc(doc(db, "gc_months", curMonth));
+      setMd(snap.exists() ? snap.data() : {});
+      setMdKey(k => k + 1);
+    })();
+  }, [curMonth]);
+
+  useEffect(() => {
+    const [y, mo] = curMonth.split("-").map(Number);
+    const keys = [];
+    for (let i = -5; i <= 2; i++) {
+      const d = new Date(y, mo - 1 + i, 1);
+      const k = `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,"0")}`;
+      if (k !== curMonth) keys.push(k);
+    }
+    Promise.all(keys.map(async k => {
+      const snap = await getDoc(doc(db, "gc_months", k));
+      return [k, snap.exists() ? snap.data() : null];
+    })).then(results => {
+      const obj = {};
+      results.forEach(([k, data]) => { if (data) obj[k] = data; });
+      setMonthsData(obj);
+    }).catch(() => {});
+  }, [curMonth]);
+
+  const saveField = async (path, key, value) => {
+    const newMd = gcSet(md, path, key, value);
+    setMd(newMd);
+    await setDoc(doc(db, "gc_months", curMonth), newMd);
+    showGCToast("✓ Salvo");
+  };
+
+  const inp = (extra = {}) => ({
+    width: "100%", border: `1.5px solid ${t.border}`, borderRadius: 8,
+    padding: "7px 10px", fontSize: 13, color: t.text, background: t.inputBg,
+    outline: "none", fontFamily: "inherit", ...extra
+  });
+
+  const fld = (path, fkey, label, type = "number") => (
+    <div key={`${path}.${fkey}`} style={{ marginBottom: 11 }}>
+      <label style={{ display:"block", fontSize:10, fontWeight:700, color:t.textMuted, marginBottom:3, textTransform:"uppercase", letterSpacing:"0.5px" }}>{label}</label>
+      <input type={type} defaultValue={gcGetVal(md, path, fkey)} placeholder={type==="number"?"0":""}
+        style={inp()} onBlur={e => saveField(path, fkey, e.target.value)} />
+    </div>
+  );
+
+  const fldCur = (path, fkey, label) => {
+    const raw = gcGetVal(md, path, fkey);
+    return (
+      <div key={`${path}.${fkey}`} style={{ marginBottom: 11 }}>
+        <label style={{ display:"block", fontSize:10, fontWeight:700, color:t.textMuted, marginBottom:3, textTransform:"uppercase", letterSpacing:"0.5px" }}>{label}</label>
+        <input type="text" defaultValue={raw ? gcFmtBRL(raw) : ""} placeholder="R$ 0,00"
+          style={inp()}
+          onChange={e => { e.target.value = gcFmtBRLLive(e.target.value); }}
+          onBlur={e => saveField(path, fkey, gcParseBRL(e.target.value))} />
+      </div>
+    );
+  };
+
+  const ta = (path, fkey, label, rows = 3) => (
+    <div key={`${path}.${fkey}`} style={{ marginBottom: 11 }}>
+      <label style={{ display:"block", fontSize:10, fontWeight:700, color:t.textMuted, marginBottom:3, textTransform:"uppercase", letterSpacing:"0.5px" }}>{label}</label>
+      <textarea rows={rows} defaultValue={gcGetVal(md, path, fkey)}
+        style={inp({ resize:"vertical" })} onBlur={e => saveField(path, fkey, e.target.value)} />
+    </div>
+  );
+
+  const kpiCard = (val, label, color = t.text) => (
+    <div style={{ background:t.card, borderRadius:12, padding:14, textAlign:"center", boxShadow:"0 1px 3px rgba(0,0,0,.08)" }}>
+      <div style={{ fontSize:21, fontWeight:700, color }}>{val}</div>
+      <div style={{ fontSize:10, color:t.textMuted, marginTop:3, textTransform:"uppercase", letterSpacing:".3px" }}>{label}</div>
+    </div>
+  );
+
+  const pb = (p, color) => (
+    <div style={{ height:7, background:t.border, borderRadius:4, overflow:"hidden", marginTop:5 }}>
+      <div style={{ height:"100%", borderRadius:4, transition:"width .3s", width:`${Math.min(+p||0,100)}%`, background:color }} />
+    </div>
+  );
+
+  const pcol = p => +p >= 100 ? "#22c55e" : +p >= 70 ? "#f59e0b" : "#ef4444";
+
+  const card = (children) => (
+    <div style={{ background:t.card, borderRadius:12, padding:18, boxShadow:"0 1px 3px rgba(0,0,0,.08)" }}>
+      {children}
+    </div>
+  );
+
+  const cardH = label => (
+    <div style={{ fontSize:11, fontWeight:700, color:t.textMuted, textTransform:"uppercase", letterSpacing:".5px", marginBottom:13 }}>{label}</div>
+  );
+
+  const subH = (label) => (
+    <div style={{ fontSize:11, fontWeight:700, color:"#60a5fa", textTransform:"uppercase", letterSpacing:".5px", marginBottom:11, marginTop:4 }}>{label}</div>
+  );
+
+  const kpiRow = children => (
+    <div style={{ display:"grid", gridTemplateColumns:"repeat(auto-fit,minmax(145px,1fr))", gap:11, marginBottom:14 }}>{children}</div>
+  );
+
+  const cardGrid = children => (
+    <div style={{ display:"grid", gridTemplateColumns:"repeat(auto-fit,minmax(270px,1fr))", gap:14 }}>{children}</div>
+  );
+
+  // ── Section renders ────────────────────────────────────────────────
+
+  const renderMetas = () => {
+    const d   = md.metas || {};
+    const ren = (md.indicadores||{}).renovacao || {};
+    const vnd = (md.indicadores||{}).vendas    || {};
+
+    // Auto-calculated "realizado" from Indicadores
+    const novasAuto = vnd.novasAss != null ? String(vnd.novasAss) : null;
+    const renovTot  = +ren.totais || 0;
+    const renovAuto = renovTot > 0 ? ((+ren.realizadas||0) / renovTot * 100).toFixed(1) : null;
+    const churnAuto = renovTot > 0 ? ((+ren.canceladas||0) / renovTot * 100).toFixed(1) : null;
+
+    const novasReal = novasAuto ?? d.novasReal;
+    const renovReal = renovAuto ?? d.renovReal;
+    const churnReal = churnAuto ?? d.churnReal;
+
+    const pn = gcPct(novasReal, d.novasMeta);
+    const pr = gcPct(renovReal, d.renovMeta);
+    const pc = gcPct(churnReal, d.churnMeta);
+    const ps = gcPct(d.satReal, d.satMeta);
+
+    const autoFld = (label, val) => (
+      <div style={{ marginBottom:11 }}>
+        <label style={{ display:"block", fontSize:10, fontWeight:700, color:t.textMuted, marginBottom:3, textTransform:"uppercase", letterSpacing:"0.5px" }}>{label}</label>
+        <div style={{ ...inp(), display:"flex", alignItems:"center", justifyContent:"space-between", background: dark?"rgba(34,197,94,0.08)":"rgba(34,197,94,0.06)", borderColor:"rgba(34,197,94,0.35)", color:t.text, cursor:"default" }}>
+          <span style={{ fontWeight:700 }}>{val ?? "—"}</span>
+          <span style={{ fontSize:9, fontWeight:700, color:"#22c55e", textTransform:"uppercase", letterSpacing:".5px" }}>auto</span>
+        </div>
+      </div>
+    );
+
+    return (<>
+      {kpiRow(<>
+        {kpiCard(novasReal||"—", "Novas Assinaturas", "#3b82f6")}
+        {kpiCard(renovReal?renovReal+"%":"—", "Taxa de Renovação", +renovReal>=+d.renovMeta&&d.renovMeta?"#22c55e":"#f59e0b")}
+        {kpiCard(churnReal?churnReal+"%":"—", "Taxa de Churn", +churnReal<=+d.churnMeta&&d.churnMeta?"#22c55e":"#ef4444")}
+        {kpiCard(d.satReal?d.satReal+"%":"—", "Satisfação", +d.satReal>=+d.satMeta&&d.satMeta?"#22c55e":"#f59e0b")}
+      </>)}
+      {cardGrid(<>
+        {card(<>
+          {cardH("🆕 Novas Assinaturas")}
+          {fld("metas","novasMeta","Meta (qtd)")}
+          {autoFld("Realizado (qtd)", novasAuto)}
+          {pb(pn,pcol(pn))}
+          <div style={{fontSize:11,color:t.textMuted,textAlign:"right",marginTop:3}}>{pn}% atingido</div>
+        </>)}
+        {card(<>
+          {cardH("🔄 Taxa de Renovação (%)")}
+          {fld("metas","renovMeta","Meta (%)")}
+          {autoFld("Realizado (%)", renovAuto)}
+          {pb(pr,pcol(pr))}
+          <div style={{fontSize:11,color:t.textMuted,textAlign:"right",marginTop:3}}>{pr}% atingido</div>
+        </>)}
+        {card(<>
+          {cardH("📉 Taxa de Churn (%)")}
+          {fld("metas","churnMeta","Meta máx. (%)")}
+          {autoFld("Realizado (%)", churnAuto)}
+          {pb(pc, d.churnMeta && +churnReal <= +d.churnMeta ? "#22c55e" : "#ef4444")}
+          <div style={{fontSize:11,color:d.churnMeta&&+churnReal<=+d.churnMeta?"#22c55e":"#ef4444",textAlign:"right",marginTop:3,fontWeight:600}}>{churnReal||0}% (meta: ≤{d.churnMeta||0}%)</div>
+        </>)}
+        {card(<>
+          {cardH("😊 Satisfação (%)")}
+          {fld("metas","satMeta","Meta (%)")}
+          {fld("metas","satReal","Realizado (%)")}
+          {pb(ps,pcol(ps))}
+          <div style={{fontSize:11,color:t.textMuted,textAlign:"right",marginTop:3}}>{ps}% atingido</div>
+        </>)}
+      </>)}
+    </>);
+  };
+
+  const renderDash = () => {
+    const ind  = md.indicadores || {};
+    const ren  = ind.renovacao  || {};
+    const vnd  = ind.vendas     || {};
+    const met  = md.metas       || {};
+
+    const waG  = +gcGetVal(md,"indicadores.atenGeral","whatsapp")||0;
+    const waA  = +gcGetVal(md,"indicadores.atenAdm",  "whatsapp")||0;
+    const tkG  = +gcGetVal(md,"indicadores.atenGeral","tickets") ||0;
+    const tkA  = +gcGetVal(md,"indicadores.atenAdm",  "tickets") ||0;
+    const telG = +gcGetVal(md,"telefonia.geral",          "recebidas")||0;
+    const telA = +gcGetVal(md,"telefonia.administrativo", "recebidas")||0;
+    const atenTotal = waG+waA+tkG+tkA+telG+telA;
+
+    const renovTot = +ren.totais || 0;
+    const renovPct = renovTot > 0 ? +((+ren.realizadas||0)/renovTot*100).toFixed(1) : null;
+    const churnPct = renovTot > 0 ? +((+ren.canceladas||0)/renovTot*100).toFixed(1) : null;
+
+    const bar = (val, max, color) => (
+      <div style={{ flex:1, background:dark?"rgba(255,255,255,0.07)":"rgba(0,0,0,0.07)", borderRadius:4, height:14, overflow:"hidden" }}>
+        <div style={{ width: max>0 ? Math.max(3,(val/max)*100)+"%" : "3%", height:"100%", background:color, borderRadius:4, transition:"width .5s" }} />
+      </div>
+    );
+
+    const ring = (pct, color, size=68) => {
+      const r=size*.36, cx=size/2, cy=size/2, circ=2*Math.PI*r;
+      const dash=(Math.min(+pct||0,100)/100)*circ;
+      return (
+        <svg width={size} height={size}>
+          <circle cx={cx} cy={cy} r={r} fill="none" stroke={dark?"rgba(255,255,255,0.08)":"rgba(0,0,0,0.07)"} strokeWidth={size*.1}/>
+          <circle cx={cx} cy={cy} r={r} fill="none" stroke={color} strokeWidth={size*.1}
+            strokeDasharray={`${dash} ${circ}`} strokeDashoffset={circ*.25} strokeLinecap="round"/>
+          <text x={cx} y={cy+4} textAnchor="middle" fontSize={size*.19} fontWeight="bold" fill={color}>
+            {pct!=null?pct+"%":"—"}
+          </text>
+        </svg>
+      );
+    };
+
+    const vendorRows = vendors.map(v => {
+      const vd = (ind.vendedores||{})[v.id] || {};
+      const total = (+vd.valor||0) + (+vd.valorCrossSell||0);
+      return { name:`${v.name}${v.surname?" "+v.surname:""}`, total, conv:+vd.leadsConv||0 };
+    }).filter(r=>r.total>0).sort((a,b)=>b.total-a.total).slice(0,5);
+    const maxVend = Math.max(...vendorRows.map(r=>r.total), 1);
+
+    const maxAten = Math.max(waG,waA,tkG,tkA,telG,telA,1);
+
+    const kpiItem = (label, val, color, sub) => (
+      <div style={{ background:t.card, borderRadius:12, padding:"14px 16px", boxShadow:"0 1px 3px rgba(0,0,0,.08)", borderTop:`3px solid ${color}` }}>
+        <div style={{ fontSize:9, fontWeight:700, color:t.textMuted, textTransform:"uppercase", letterSpacing:".6px", marginBottom:6 }}>{label}</div>
+        <div style={{ fontSize:26, fontWeight:800, color, lineHeight:1, marginBottom:4 }}>{val}</div>
+        <div style={{ fontSize:10, color:t.textMuted }}>{sub}</div>
+      </div>
+    );
+
+    return (<>
+      {/* Report button */}
+      <div style={{ display:"flex", justifyContent:"flex-end", marginBottom:14 }}>
+        <button onClick={() => setShowReportModal(true)}
+          style={{ padding:"7px 16px", background:"rgba(99,102,241,0.12)", border:"1px solid rgba(99,102,241,0.3)", borderRadius:8, color:"#818cf8", fontWeight:600, fontSize:12, cursor:"pointer", fontFamily:"inherit" }}>
+          🖨️ Emitir relatório
+        </button>
+      </div>
+      {/* KPI row */}
+      <div style={{ display:"grid", gridTemplateColumns:"repeat(4,1fr)", gap:12, marginBottom:18 }}>
+        {kpiItem("Novas Assinaturas", vnd.novasAss||"—", "#3b82f6", met.novasMeta?`meta: ${met.novasMeta}`:"sem meta definida")}
+        {kpiItem("Taxa de Renovação", renovPct!=null?renovPct+"%":"—", "#22c55e", renovTot?`${ren.realizadas||0} de ${renovTot} totais`:"sem dados")}
+        {kpiItem("Taxa de Churn",     churnPct!=null?churnPct+"%":"—", "#ef4444", renovTot?`${ren.canceladas||0} canceladas`:"sem dados")}
+        {kpiItem("Total Atendimentos",atenTotal||"—", "#a78bfa", "WA + Tickets + Telefone")}
+      </div>
+
+      {/* Charts row */}
+      <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr", gap:14, marginBottom:14 }}>
+        {card(<>
+          {subH("🎧 Atendimentos por Canal")}
+          {[
+            { dept:"Geral",           items:[{l:"WhatsApp",v:waG,c:"#22c55e"},{l:"Tickets",v:tkG,c:"#3b82f6"},{l:"Telefone",v:telG,c:"#a78bfa"}] },
+            { dept:"Adm. & Financeiro",items:[{l:"WhatsApp",v:waA,c:"#22c55e"},{l:"Tickets",v:tkA,c:"#3b82f6"},{l:"Telefone",v:telA,c:"#a78bfa"}] },
+          ].map(({ dept, items }) => (
+            <div key={dept} style={{ marginBottom:12 }}>
+              <div style={{ fontSize:10, fontWeight:700, color:t.textMuted, marginBottom:6 }}>{dept}</div>
+              {items.map(it => (
+                <div key={it.l} style={{ display:"flex", alignItems:"center", gap:8, marginBottom:5 }}>
+                  <span style={{ fontSize:10, color:it.c, minWidth:58, fontWeight:600 }}>{it.l}</span>
+                  {bar(it.v, maxAten, it.c)}
+                  <span style={{ fontSize:11, fontWeight:700, color:t.text, minWidth:28, textAlign:"right" }}>{it.v}</span>
+                </div>
+              ))}
+            </div>
+          ))}
+        </>)}
+
+        {card(<>
+          {subH("🔄 Renovação")}
+          <div style={{ display:"flex", justifyContent:"space-around", marginBottom:14 }}>
+            <div style={{ textAlign:"center" }}>
+              {ring(renovPct, "#22c55e")}
+              <div style={{ fontSize:9, color:t.textMuted, marginTop:4 }}>RENOVAÇÃO</div>
+            </div>
+            <div style={{ textAlign:"center" }}>
+              {ring(churnPct, "#ef4444")}
+              <div style={{ fontSize:9, color:t.textMuted, marginTop:4 }}>CHURN</div>
+            </div>
+          </div>
+          {[
+            { label:"Totais",     val:renovTot,           color:"#3b82f6" },
+            { label:"Realizadas", val:+ren.realizadas||0, color:"#22c55e" },
+            { label:"Canceladas", val:+ren.canceladas||0, color:"#ef4444" },
+            { label:"Desativadas",val:+ren.desativadas||0,color:"#f59e0b" },
+          ].map(row => (
+            <div key={row.label} style={{ display:"flex", alignItems:"center", gap:8, marginBottom:7 }}>
+              <span style={{ fontSize:10, color:t.textMuted, minWidth:68 }}>{row.label}</span>
+              {bar(row.val, Math.max(renovTot,1), row.color)}
+              <span style={{ fontSize:11, fontWeight:700, color:row.color, minWidth:28, textAlign:"right" }}>{row.val}</span>
+            </div>
+          ))}
+        </>)}
+      </div>
+
+      {/* Top Vendedores */}
+      {vendorRows.length > 0 && card(<>
+        {subH("💼 Top Vendedores por Valor")}
+        {vendorRows.map((r,i) => (
+          <div key={r.name} style={{ display:"flex", alignItems:"center", gap:10, marginBottom:8 }}>
+            <span style={{ fontSize:12, fontWeight:800, color:t.textMuted, minWidth:16 }}>{i+1}</span>
+            <span style={{ fontSize:12, color:t.text, minWidth:130 }}>{r.name}</span>
+            {bar(r.total, maxVend, "#f59e0b")}
+            <span style={{ fontSize:11, fontWeight:700, color:"#f59e0b", minWidth:88, textAlign:"right" }}>
+              {r.total.toLocaleString("pt-BR",{style:"currency",currency:"BRL"})}
+            </span>
+          </div>
+        ))}
+      </>)}
+
+      {/* Comparativo Mensal */}
+      {(() => {
+        const MONTHS = ["Jan","Fev","Mar","Abr","Mai","Jun","Jul","Ago","Set","Out","Nov","Dez"];
+        const [cy, cmo] = curMonth.split("-").map(Number);
+        const allMonths = [];
+        for (let i = -5; i <= 2; i++) {
+          const d = new Date(cy, cmo - 1 + i, 1);
+          const key = `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,"0")}`;
+          allMonths.push({ key, label: MONTHS[d.getMonth()], current: key === curMonth });
+        }
+        const chartMonths = allMonths.filter(m => m.current || monthsData[m.key]);
+        if (chartMonths.length < 2) return null;
+
+        const mMetrics = (key) => {
+          const mData = key === curMonth ? md : (monthsData[key] || {});
+          const ind = mData.indicadores || {};
+          const ren = ind.renovacao || {};
+          const vnd = ind.vendas || {};
+          const rT = +ren.totais || 0;
+          return {
+            novas: +vnd.novasAss || 0,
+            renov: rT > 0 ? +((+ren.realizadas||0)/rT*100).toFixed(1) : 0,
+            churn: rT > 0 ? +((+ren.canceladas||0)/rT*100).toFixed(1) : 0,
+            aten:  (+gcGetVal(mData,"indicadores.atenGeral","whatsapp")||0)+
+                   (+gcGetVal(mData,"indicadores.atenAdm","whatsapp")||0)+
+                   (+gcGetVal(mData,"indicadores.atenGeral","tickets")||0)+
+                   (+gcGetVal(mData,"indicadores.atenAdm","tickets")||0)+
+                   (+gcGetVal(mData,"telefonia.geral","recebidas")||0)+
+                   (+gcGetVal(mData,"telefonia.administrativo","recebidas")||0),
+            sat:     +(mData.metas?.satReal  || 0),
+            satMeta: +(mData.metas?.satMeta  || 0),
+          };
+        };
+
+        const bez = (pts) => {
+          if (pts.length < 2) return `M${pts[0]?.x},${pts[0]?.y}`;
+          let d = `M${pts[0].x},${pts[0].y}`;
+          for (let i=1;i<pts.length;i++) {
+            const cx=(pts[i-1].x+pts[i].x)/2;
+            d+=` C${cx},${pts[i-1].y} ${cx},${pts[i].y} ${pts[i].x},${pts[i].y}`;
+          }
+          return d;
+        };
+
+        const mkSeries = (metric) => chartMonths.map(m => ({ val: mMetrics(m.key)[metric], label: m.label, current: m.current }));
+
+        const trend = (series) => {
+          const ci = series.findIndex(s=>s.current);
+          const cv = series[ci]?.val??0, pv = ci>0?series[ci-1].val:null;
+          if (pv===null||pv===0) return null;
+          const d=(((cv-pv)/pv)*100).toFixed(1);
+          return { pct:Math.abs(d), up:cv>=pv };
+        };
+
+        // ── Multi-line chart (Renovação vs Churn) ──────────────────────
+        const multiLineChart = ({ seriesDef, suffix="", cKey }) => {
+          const months = seriesDef[0].data;
+          if (months.length < 2) return null;
+          const W=400, H=110, pL=34, pR=10, pT=10, pB=26;
+          const cW=W-pL-pR, cH=H-pT-pB;
+          const allVals = seriesDef.flatMap(s=>s.data.map(d=>d.val));
+          const rawMax = Math.max(...allVals,1);
+          const step = rawMax<=10?2:rawMax<=50?10:rawMax<=100?20:50;
+          const maxVal = Math.ceil(rawMax/step)*step || step;
+          const xStep = months.length>1 ? cW/(months.length-1) : cW;
+          const toX = i => pL+i*xStep;
+          const toY = v => pT+cH-(v/maxVal)*cH;
+          const yTicks = [];
+          for (let v=0;v<=maxVal;v+=step) yTicks.push(v);
+          const hovX = dashHover?.cKey===cKey ? dashHover.xIdx : null;
+
+          return (
+            <svg width="100%" viewBox={`0 0 ${W} ${H}`} style={{ overflow:"visible" }}>
+              {/* Y grid + labels */}
+              {yTicks.map(v=>(
+                <g key={v}>
+                  <line x1={pL} y1={toY(v)} x2={W-pR} y2={toY(v)}
+                    stroke={dark?"rgba(255,255,255,0.05)":"rgba(0,0,0,0.04)"} strokeDasharray="3 4" strokeWidth={0.8} vectorEffect="non-scaling-stroke"/>
+                  <text x={pL-6} y={toY(v)+3.5} textAnchor="end" fontSize="9" fill="#64748b">{v}</text>
+                </g>
+              ))}
+
+              {/* Hover hit columns */}
+              {months.map((m,i)=>(
+                <rect key={i} x={toX(i)-xStep*0.5} y={pT} width={xStep} height={cH}
+                  fill="transparent" style={{cursor:"crosshair"}}
+                  onMouseEnter={()=>setDashHover({cKey,xIdx:i})}
+                  onMouseLeave={()=>setDashHover(null)}/>
+              ))}
+
+              {/* Vertical hover line */}
+              {hovX!=null && <line x1={toX(hovX)} y1={pT} x2={toX(hovX)} y2={pT+cH}
+                stroke={dark?"rgba(255,255,255,0.18)":"rgba(0,0,0,0.12)"} strokeWidth={1} strokeDasharray="4 3"/>}
+
+              {/* Series lines */}
+              {seriesDef.map((s,si)=>{
+                const pts=s.data.map((d,i)=>({...d,x:toX(i),y:toY(d.val)}));
+                return <path key={si} d={bez(pts)} fill="none" stroke={s.color} strokeWidth={1}
+                  strokeDasharray={s.dashed?"7 4":undefined} strokeLinecap="round" strokeLinejoin="round" vectorEffect="non-scaling-stroke"/>;
+              })}
+
+              {/* Dots */}
+              {seriesDef.map((s,si)=>
+                s.data.map((d,i)=>{
+                  const x=toX(i), y=toY(d.val), isCur=d.current, isHov=hovX===i;
+                  return (
+                    <g key={`${si}-${i}`}>
+                      {isCur && <circle cx={x} cy={y} r={8} fill={s.color} opacity={0.1}/>}
+                      {isHov && !isCur && <circle cx={x} cy={y} r={6} fill={s.color} opacity={0.12}/>}
+                      <circle cx={x} cy={y} r={isCur?3:isHov?2.5:2}
+                        fill={isCur||isHov?s.color:(dark?"#1a2640":"#f1f5f9")}
+                        stroke={s.color} strokeWidth={1} vectorEffect="non-scaling-stroke"/>
+                    </g>
+                  );
+                })
+              )}
+
+              {/* Hover tooltip */}
+              {hovX!=null && (()=>{
+                const tx=Math.max(52,Math.min(W-52,toX(hovX)));
+                const vals=seriesDef.map(s=>({color:s.color,label:s.label,val:s.data[hovX]?.val??0}));
+                const bH=vals.length*17+18;
+                return (
+                  <g style={{pointerEvents:"none"}}>
+                    <rect x={tx-46} y={pT+2} width={92} height={bH} rx={7}
+                      fill={dark?"#0f1e35":"#1e293b"} opacity={0.93}/>
+                    <text x={tx} y={pT+16} textAnchor="middle" fontSize="9" fill="#94a3b8" fontWeight="700">
+                      {months[hovX]?.label}
+                    </text>
+                    {vals.map((v,vi)=>(
+                      <text key={vi} x={tx} y={pT+16+(vi+1)*17} textAnchor="middle" fontSize="9.5" fill={v.color} fontWeight="700">
+                        {v.label}: {v.val}{suffix}
+                      </text>
+                    ))}
+                  </g>
+                );
+              })()}
+
+              {/* X labels */}
+              {months.map((m,i)=>(
+                <text key={i} x={toX(i)} y={H-2} textAnchor="middle" fontSize="9"
+                  fill={m.current?(dark?"#e2e8f0":"#1e293b"):"#64748b"}
+                  fontWeight={m.current?"bold":"normal"}>{m.label}</text>
+              ))}
+            </svg>
+          );
+        };
+
+        // ── Sparkline (single metric) ──────────────────────────────────
+        const spark = (data, color, suffix, cKey) => {
+          if (data.every(d=>d.val===0)) return (
+            <div style={{height:80,display:"flex",alignItems:"center",justifyContent:"center",color:t.textMuted,fontSize:11}}>Sem dados</div>
+          );
+          const W=260, H=52, pL=8, pR=8, pT=16, pB=18;
+          const cW=W-pL-pR, cH=H-pT-pB;
+          const max=Math.max(...data.map(d=>d.val),1);
+          const xStep=data.length>1?cW/(data.length-1):0;
+          const pts=data.map((d,i)=>({...d,x:pL+i*xStep,y:pT+cH-(d.val/max)*cH}));
+          const linePath=bez(pts);
+          const areaPath=linePath+` L${pts[pts.length-1].x},${pT+cH} L${pts[0].x},${pT+cH} Z`;
+          const gId=`sg-${cKey}`;
+          const hovX=dashHover?.cKey===cKey?dashHover.xIdx:null;
+          return (
+            <svg width="100%" viewBox={`0 0 ${W} ${H+2}`} style={{overflow:"visible"}}>
+              <defs>
+                <linearGradient id={gId} x1="0" y1="0" x2="0" y2="1">
+                  <stop offset="0%" stopColor={color} stopOpacity="0.22"/>
+                  <stop offset="100%" stopColor={color} stopOpacity="0"/>
+                </linearGradient>
+              </defs>
+              {[0.33,0.66].map(f=>(
+                <line key={f} x1={pL} y1={pT+cH*(1-f)} x2={W-pR} y2={pT+cH*(1-f)}
+                  stroke={dark?"rgba(255,255,255,0.05)":"rgba(0,0,0,0.04)"} strokeDasharray="3 4" strokeWidth={0.8} vectorEffect="non-scaling-stroke"/>
+              ))}
+              <path d={areaPath} fill={`url(#${gId})`}/>
+              <path d={linePath} fill="none" stroke={color} strokeWidth={1} strokeLinecap="round" strokeLinejoin="round" vectorEffect="non-scaling-stroke"/>
+              {pts.map((p,i)=>{
+                const isHov=hovX===i, isCur=p.current;
+                const tx=Math.max(26,Math.min(W-26,p.x));
+                return (
+                  <g key={i} style={{cursor:"crosshair"}}
+                    onMouseEnter={()=>setDashHover({cKey,xIdx:i})}
+                    onMouseLeave={()=>setDashHover(null)}>
+                    {isCur&&<circle cx={p.x} cy={p.y} r={8} fill={color} opacity={0.1}/>}
+                    {isHov&&!isCur&&<circle cx={p.x} cy={p.y} r={6} fill={color} opacity={0.12}/>}
+                    <circle cx={p.x} cy={p.y} r={isCur?3:isHov?2.5:2}
+                      fill={isCur||isHov?color:(dark?"#1a2640":"#f1f5f9")}
+                      stroke={color} strokeWidth={1} vectorEffect="non-scaling-stroke"/>
+                    {isHov&&(
+                      <g style={{pointerEvents:"none"}}>
+                        <rect x={tx-24} y={p.y-36} width={48} height={20} rx={5} fill={dark?"#0f1e35":"#1e293b"} opacity={0.93}/>
+                        <polygon points={`${tx-5},${p.y-16} ${tx+5},${p.y-16} ${tx},${p.y-8}`} fill={dark?"#0f1e35":"#1e293b"} opacity={0.93}/>
+                        <text x={tx} y={p.y-22} textAnchor="middle" fontSize="10" fontWeight="800" fill={color}>{p.val}{suffix}</text>
+                      </g>
+                    )}
+                    {isCur&&!isHov&&<text x={p.x} y={p.y-12} textAnchor="middle" fontSize="9" fill={color} fontWeight="800">{p.val}{suffix}</text>}
+                    <text x={p.x} y={H+2} textAnchor="middle" fontSize="7.5"
+                      fill={isCur?color:"#64748b"} fontWeight={isCur?"bold":"normal"}>{p.label}</text>
+                  </g>
+                );
+              })}
+            </svg>
+          );
+        };
+
+        const sparkCard = (ch) => {
+          const tr=trend(ch.series);
+          const currVal=ch.series.find(s=>s.current)?.val;
+          return (
+            <div key={ch.key} style={{borderRadius:12,padding:"14px 16px",background:dark?"rgba(255,255,255,0.03)":"#f8fafc",border:`1px solid ${t.border}`,borderTop:`3px solid ${ch.color}`}}>
+              <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:4}}>
+                <span style={{fontSize:10,fontWeight:700,color:t.textMuted,textTransform:"uppercase",letterSpacing:".5px"}}>{ch.title}</span>
+                {tr&&<span style={{fontSize:10,fontWeight:700,padding:"2px 7px",borderRadius:20,background:tr.up?"rgba(34,197,94,0.15)":"rgba(239,68,68,0.15)",color:tr.up?"#22c55e":"#ef4444"}}>{tr.up?"▲":"▼"} {tr.pct}%</span>}
+              </div>
+              <div style={{fontSize:22,fontWeight:800,color:ch.color,lineHeight:1,marginBottom:8}}>{currVal??"—"}{ch.suffix}</div>
+              {spark(ch.series,ch.color,ch.suffix,ch.key)}
+            </div>
+          );
+        };
+
+        return (
+          <div style={{marginTop:14}}>
+            <div style={{background:t.card,borderRadius:14,padding:"20px 22px",boxShadow:"0 1px 3px rgba(0,0,0,.08)"}}>
+              {subH("📅 Comparativo Mensal")}
+
+              {/* Row 1: Renovação vs Churn  |  Satisfação vs Meta */}
+              <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:14,marginBottom:14}}>
+                {[
+                  { cKey:"renov-churn", title:"Renovação vs Churn", suffix:"%", seriesDef:[
+                    { label:"Renovação%", color:"#22c55e", dashed:false, data:mkSeries("renov") },
+                    { label:"Churn%",     color:"#ef4444", dashed:true,  data:mkSeries("churn") },
+                  ]},
+                  { cKey:"sat-meta", title:"Satisfação do Cliente", suffix:"%", seriesDef:[
+                    { label:"Satisfação%", color:"#f59e0b", dashed:false, data:mkSeries("sat")     },
+                    { label:"Meta%",       color:"#64748b", dashed:true,  data:mkSeries("satMeta") },
+                  ]},
+                ].map(cfg => (
+                  <div key={cfg.cKey} style={{background:dark?"rgba(255,255,255,0.03)":"rgba(248,250,252,1)",borderRadius:12,padding:"12px 14px",border:`1px solid ${t.border}`}}>
+                    <div style={{fontSize:10,fontWeight:700,color:t.textMuted,textTransform:"uppercase",letterSpacing:".7px",marginBottom:8}}>{cfg.title}</div>
+                    {multiLineChart({ cKey:cfg.cKey, suffix:cfg.suffix, seriesDef:cfg.seriesDef })}
+                    <div style={{display:"flex",justifyContent:"center",gap:18,marginTop:8}}>
+                      {cfg.seriesDef.map(s=>(
+                        <div key={s.label} style={{display:"flex",alignItems:"center",gap:6}}>
+                          <svg width="22" height="10">
+                            <line x1="0" y1="5" x2="22" y2="5" stroke={s.color} strokeWidth="1" strokeDasharray={s.dashed?"7 4":undefined}/>
+                            <circle cx="11" cy="5" r="3" fill={s.color}/>
+                          </svg>
+                          <span style={{fontSize:10,color:t.textMuted}}>{s.label}</span>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                ))}
+              </div>
+
+              {/* Row 2: Novas Assinaturas + Total Atendimentos sparklines */}
+              <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:14}}>
+                {[
+                  {title:"Novas Assinaturas", key:"novas", series:mkSeries("novas"), color:"#3b82f6", suffix:""},
+                  {title:"Total Atendimentos",key:"aten",  series:mkSeries("aten"),  color:"#a78bfa", suffix:""},
+                ].map(sparkCard)}
+              </div>
+            </div>
+          </div>
+        );
+      })()}
+    </>);
+  };
+
+  const renderFunil = () => {
+    const d = md.funil || {};
+    const tq = gcPct(d.leadQual, d.leads);
+    const tc = gcPct(d.leadConv, d.leads);
+    return (<>
+      {kpiRow(<>
+        {kpiCard(d.leads||0, "Total de Leads", "#3b82f6")}
+        {kpiCard(d.leadQual||0, "Leads Qualificados", "#f59e0b")}
+        {kpiCard(d.leadConv||0, "Leads Convertidos", "#22c55e")}
+        {kpiCard(tc+"%", "Taxa de Conversão", +tc>=20?"#22c55e":+tc>=10?"#f59e0b":"#ef4444")}
+      </>)}
+      {cardGrid(<>
+        {card(<>{cardH("📊 Funil")}{fld("funil","leads","Total de Leads")}{fld("funil","leadQual","Leads Qualificados")}{fld("funil","leadConv","Leads Convertidos")}</>)}
+        {card(<>
+          {cardH("🔄 Taxas de Conversão")}
+          <div style={{marginBottom:14}}>
+            <div style={{display:"flex",justifyContent:"space-between",fontSize:12,marginBottom:3}}>
+              <span style={{color:t.textSub}}>Leads → Qualificados</span><strong style={{color:t.text}}>{tq}%</strong>
+            </div>{pb(tq,"#f59e0b")}
+          </div>
+          <div>
+            <div style={{display:"flex",justifyContent:"space-between",fontSize:12,marginBottom:3}}>
+              <span style={{color:t.textSub}}>Leads → Convertidos</span><strong style={{color:t.text}}>{tc}%</strong>
+            </div>{pb(tc,"#22c55e")}
+          </div>
+        </>)}
+      </>)}
+    </>);
+  };
+
+  const renderInad = () => {
+    const d = md.inadimplencia || {};
+    return (<>
+      {kpiRow(<>
+        {kpiCard("R$ "+parseFloat(d.aberto||0).toLocaleString("pt-BR",{minimumFractionDigits:0}), "Total em Aberto", "#ef4444")}
+        {kpiCard(d.vencidas||0, "Parcelas Vencidas", "#f59e0b")}
+        {kpiCard(d.acordos||0, "Acordos Realizados", "#3b82f6")}
+        {kpiCard("R$ "+parseFloat(d.baixas||0).toLocaleString("pt-BR",{minimumFractionDigits:0}), "Baixas do Mês", "#22c55e")}
+      </>)}
+      {cardGrid(<>
+        {card(<>{cardH("⚠️ Inadimplência")}{fld("inadimplencia","aberto","Total em Aberto (R$)")}{fld("inadimplencia","vencidas","Parcelas Vencidas (qtd)")}{fld("inadimplencia","acordos","Acordos Realizados (qtd)")}{fld("inadimplencia","baixas","Baixas do Mês (R$)")}</>)}
+        {card(<>{cardH("📋 Observações")}{ta("inadimplencia","obs","Notas do mês",5)}</>)}
+      </>)}
+    </>);
+  };
+
+  const renderIndicadores = () => {
+    const d = md.indicadores || {};
+
+    const ticketMedio = d.vendas?.novasAss && d.vendas?.valorTotalNovas
+      ? (parseFloat(d.vendas.valorTotalNovas) / parseFloat(d.vendas.novasAss)).toFixed(2)
+      : null;
+
+    const secH = (label) => (
+      <div style={{ fontSize:14, fontWeight:800, color:t.text, margin:"24px 0 14px", paddingBottom:8, borderBottom:`2px solid ${t.border}`, textTransform:"uppercase", letterSpacing:".8px" }}>{label}</div>
+    );
+
+    const colabCard = (c, headerColor) => {
+      const cd = ((d.colab)||{})[c.id] || {};
+      const initials = c.name.split(" ").filter(Boolean).slice(0,2).map(w => w[0].toUpperCase()).join("");
+      const atendAuto = (+cd.whatsapp||0) + (+cd.tickets||0) + (+cd.telefone||0);
+      const mediaAuto = cd.diasTrab && +cd.diasTrab > 0 ? (atendAuto / +cd.diasTrab).toFixed(1) : "—";
+      const mediaPausaAuto = (() => {
+        if (!cd.pausaTimeTotal || !cd.diasTrab || +cd.diasTrab === 0) return null;
+        const secs = parseTimeToSec(cd.pausaTimeTotal);
+        return secs > 0 ? secToHHMMSS(Math.round(secs / +cd.diasTrab)) : null;
+      })();
+      const deptLabel = c.dept === "administrativo" ? "Adm. & Financeiro" : "Geral";
+      const inpEdit = { border:"1px solid rgba(255,255,255,0.3)", borderRadius:6, padding:"5px 8px", fontSize:12, color:"#fff", background:"rgba(255,255,255,0.12)", fontFamily:"inherit", outline:"none", width:"100%" };
+      return (
+        <div key={c.id} style={{ background:t.card, borderRadius:12, boxShadow:"0 2px 8px rgba(0,0,0,.10)", overflow:"hidden" }}>
+          {/* Header */}
+          {editColab === c.id ? (
+            <div style={{ padding:"14px 16px", background:headerColor }}>
+              <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr", gap:7, marginBottom:7 }}>
+                <input type="text" value={editData.name} onChange={e => setEditData(p=>({...p,name:e.target.value}))} placeholder="Nome" style={inpEdit} />
+                <input type="text" value={editData.surname} onChange={e => setEditData(p=>({...p,surname:e.target.value}))} placeholder="Sobrenome" style={inpEdit} />
+              </div>
+              <select value={editData.dept} onChange={e => setEditData(p=>({...p,dept:e.target.value}))}
+                style={{ ...inpEdit, marginBottom:9 }}>
+                <option value="geral">Departamento Geral</option>
+                <option value="administrativo">Adm. & Financeiro</option>
+              </select>
+              <div style={{ display:"flex", gap:6, justifyContent:"flex-end" }}>
+                <button onClick={() => setEditColab(null)}
+                  style={{ background:"rgba(255,255,255,0.12)", color:"#fff", border:"1px solid rgba(255,255,255,0.2)", borderRadius:6, padding:"4px 12px", fontSize:11, cursor:"pointer", fontFamily:"inherit" }}>Cancelar</button>
+                <button onClick={async () => {
+                  const fullName = (editData.name.trim()+" "+editData.surname.trim()).trim();
+                  if (!fullName) return;
+                  const updated = { ...c, name:fullName, dept:editData.dept };
+                  await setDoc(doc(db,"gc_collabs",c.id), updated);
+                  setCollabs(prev => prev.map(x => x.id===c.id ? updated : x).sort((a,b)=>a.name.localeCompare(b.name)));
+                  setEditColab(null);
+                  showGCToast("✓ Salvo");
+                }} style={{ background:"#22c55e", color:"#fff", border:"none", borderRadius:6, padding:"4px 12px", fontSize:11, fontWeight:600, cursor:"pointer", fontFamily:"inherit" }}>Salvar</button>
+              </div>
+            </div>
+          ) : (
+            <div style={{ padding:"14px 16px", background:headerColor, display:"flex", alignItems:"center", gap:12 }}>
+              <div style={{ width:40, height:40, borderRadius:"50%", background:"rgba(255,255,255,0.18)", border:"2px solid rgba(255,255,255,0.35)", display:"flex", alignItems:"center", justifyContent:"center", fontSize:15, fontWeight:800, color:"#fff", flexShrink:0, letterSpacing:".5px" }}>{initials}</div>
+              <div style={{ flex:1, minWidth:0 }}>
+                <div style={{ fontWeight:700, fontSize:14, color:"#fff", lineHeight:1.2 }}>{c.name}</div>
+                <div style={{ fontSize:10, color:"rgba(255,255,255,0.65)", textTransform:"uppercase", letterSpacing:".6px", marginTop:2 }}>{deptLabel}</div>
+              </div>
+              <div style={{ display:"flex", gap:5, flexShrink:0 }}>
+                <button onClick={() => {
+                  const parts = c.name.trim().split(" ");
+                  setEditData({ name:parts[0]||"", surname:parts.slice(1).join(" ")||"", dept:c.dept||"geral" });
+                  setEditColab(c.id);
+                }} style={{ background:"rgba(255,255,255,0.15)", border:"none", borderRadius:6, padding:"4px 8px", cursor:"pointer", color:"#fff", fontSize:12 }}>✏️</button>
+                <button onClick={() => setConfDel({ type:"collab", id:c.id, name:c.name })}
+                  style={{ background:"rgba(239,68,68,.25)", border:"none", borderRadius:6, padding:"4px 8px", cursor:"pointer", color:"#fca5a5", fontSize:12 }}>🗑️</button>
+              </div>
+            </div>
+          )}
+          {/* KPI chips */}
+          <div style={{ display:"flex", gap:6, padding:"10px 12px", background: dark ? "rgba(0,0,0,0.15)" : "#f1f5f9", borderBottom:`1px solid ${t.border}` }}>
+            {[
+              { label:"Atend. Totais", val: atendAuto > 0 ? atendAuto : "—", color:"#3b82f6", sub:"WA+TK+TEL" },
+              { label:"Média/dia",     val: mediaAuto,                        color:"#22c55e", sub:"total÷dias" },
+              { label:"Pausa/dia",     val: mediaPausaAuto || "—",            color:"#f59e0b", sub:"pausaT÷dias" },
+            ].map(chip => (
+              <div key={chip.label} style={{ flex:1, textAlign:"center", padding:"7px 4px", background:t.card, borderRadius:8, border:`1px solid ${t.border}` }}>
+                <div style={{ fontSize:8, fontWeight:700, color:t.textMuted, textTransform:"uppercase", letterSpacing:".5px", marginBottom:3 }}>{chip.label}</div>
+                <div style={{ fontSize:18, fontWeight:800, color:chip.color, lineHeight:1 }}>{chip.val}</div>
+                <div style={{ fontSize:8, color:t.textMuted, marginTop:2 }}>auto · {chip.sub}</div>
+              </div>
+            ))}
+          </div>
+          {/* Body */}
+          <div style={{ padding:"14px 16px" }}>
+            {subH("📅 Presença")}
+            <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr", gap:"0 12px" }}>
+              {fld("indicadores.colab."+c.id,"diasTrab","Dias Trabalhados")}
+              {fld("indicadores.colab."+c.id,"faltasSemJust","Faltas s/ Just.")}
+              {fld("indicadores.colab."+c.id,"atrasos","Atrasos")}
+              {fld("indicadores.colab."+c.id,"atestados","Atestados")}
+              {fld("indicadores.colab."+c.id,"saidasAut","Saídas Aut.")}
+              {fld("indicadores.colab."+c.id,"ferias","Férias (dias)")}
+            </div>
+            {subH("📊 Performance")}
+            <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr", gap:"0 12px" }}>
+              {fld("indicadores.colab."+c.id,"whatsapp","WhatsApp")}
+              {fld("indicadores.colab."+c.id,"tickets","Tickets")}
+              {fld("indicadores.colab."+c.id,"telefone","Telefone")}
+              {fld("indicadores.colab."+c.id,"pausas","Pausas (qtd)")}
+              {fld("indicadores.colab."+c.id,"mediaLigacao","Média em Ligação (AHT)","text")}
+              {fld("indicadores.colab."+c.id,"talkTime","Tempo Total em Ligações","text")}
+            </div>
+          </div>
+        </div>
+      );
+    };
+
+    const geralCollabs = collabs.filter(c => c.dept === "geral");
+    const admCollabs   = collabs.filter(c => c.dept === "administrativo");
+
+    const indTabs = [
+      { key:"comercial",    label:"Comercial",      icon:"🏢" },
+      { key:"atendimentos", label:"Atendimentos",   icon:"🎧" },
+      { key:"vendedores",   label:"Vendedores",     icon:"💼" },
+      { key:"colaboradores",label:"Colaboradores",  icon:"👥" },
+    ];
+
+    return (
+      <>
+        {/* ── TAB BAR ───────────────────────────────── */}
+        <div style={{ display:"flex", gap:4, marginBottom:20, borderBottom:`2px solid ${t.border}`, paddingBottom:0 }}>
+          {indTabs.map(tab => {
+            const active = indTab === tab.key;
+            return (
+              <button key={tab.key} onClick={() => setIndTab(tab.key)} style={{
+                padding:"9px 18px", border:"none", cursor:"pointer", fontFamily:"inherit",
+                fontSize:13, fontWeight: active ? 700 : 500,
+                color: active ? "#3b82f6" : t.textMuted,
+                background:"transparent",
+                borderBottom: active ? "2px solid #3b82f6" : "2px solid transparent",
+                marginBottom:"-2px", borderRadius:"6px 6px 0 0",
+                transition:"color .15s",
+              }}>{tab.icon} {tab.label}</button>
+            );
+          })}
+        </div>
+
+        {/* ── COMERCIAL ─────────────────────────────── */}
+        {indTab === "comercial" && cardGrid(<>
+          {card(<>
+            {subH("💰 Vendas")}
+            {fld("indicadores.vendas","novasAss","Novas Assinaturas")}
+            {fld("indicadores.vendas","novasAssCanceladas","Novas Assinaturas Canceladas")}
+            {fldCur("indicadores.vendas","valorTotalNovas","Valor Total em Novas Assinaturas (R$)")}
+            <div style={{ marginTop:10, padding:"10px 12px", background:t.pageBg, borderRadius:8 }}>
+              <div style={{ fontSize:10, fontWeight:700, color:t.textMuted, textTransform:"uppercase", letterSpacing:".5px", marginBottom:4 }}>Ticket Médio Total (automático)</div>
+              <div style={{ fontSize:20, fontWeight:700, color:"#3b82f6" }}>
+                {ticketMedio ? "R$ "+parseFloat(ticketMedio).toLocaleString("pt-BR",{minimumFractionDigits:2}) : "—"}
+              </div>
+            </div>
+          </>)}
+          {card(<>
+            {subH("🔄 Renovação")}
+            {fld("indicadores.renovacao","geradas","Renovações Geradas")}
+            {fld("indicadores.renovacao","totais","Renovações Totais")}
+            {fld("indicadores.renovacao","realizadas","Renovações Realizadas")}
+            {fld("indicadores.renovacao","canceladas","Renovações Canceladas")}
+            {fld("indicadores.renovacao","desativadas","Renovações Desativadas")}
+          </>)}
+          {card(<>
+            {subH("⚠️ Inadimplência")}
+            {fld("indicadores.inadimplencia","totais","Inadimplentes Totais")}
+            {fld("indicadores.inadimplencia","regularizadas","Regularizadas")}
+            {fld("indicadores.inadimplencia","emAberto","Em Aberto")}
+            {fld("indicadores.inadimplencia","canceladas","Canceladas")}
+          </>)}
+          {card(<>
+            {subH("🎯 Leads Trabalhados")}
+            {fld("indicadores.leads","totais","Total de Leads")}
+            {fld("indicadores.leads","qualificados","Leads Qualificados")}
+            {fld("indicadores.leads","convertidos","Leads Convertidos")}
+          </>)}
+        </>)}
+
+        {/* ── ATENDIMENTOS ──────────────────────────── */}
+        {indTab === "atendimentos" && <>
+          {(() => {
+            const sumWA  = (+gcGetVal(md,"indicadores.atenGeral","whatsapp")||0) + (+gcGetVal(md,"indicadores.atenAdm","whatsapp")||0);
+            const sumTk  = (+gcGetVal(md,"indicadores.atenGeral","tickets")||0)  + (+gcGetVal(md,"indicadores.atenAdm","tickets")||0);
+            const sumTel = (+gcGetVal(md,"telefonia.geral","recebidas")||0)      + (+gcGetVal(md,"telefonia.administrativo","recebidas")||0);
+            const sumTs  = parseTimeToSec(gcGetVal(md,"telefonia.geral","tempoMedio")||"")
+                         + parseTimeToSec(gcGetVal(md,"telefonia.administrativo","tempoMedio")||"");
+            const items = [
+              { label:"WhatsApp",        val: sumWA  || "—", color:"#22c55e" },
+              { label:"Tickets",         val: sumTk  || "—", color:"#3b82f6" },
+              { label:"Telefone",        val: sumTel || "—", color:"#a78bfa" },
+              { label:"Tempo Ligações",  val: sumTs > 0 ? secToHHMMSS(sumTs) : "—", color:"#f59e0b" },
+            ];
+            return card(<>
+              {subH("📊 Total Consolidado")}
+              <div style={{ display:"flex", gap:10 }}>
+                {items.map(it => (
+                  <div key={it.label} style={{ flex:1, textAlign:"center", background: dark?"rgba(255,255,255,0.04)":"rgba(0,0,0,0.03)", borderRadius:8, padding:"10px 6px", border:`1px solid ${t.border}` }}>
+                    <div style={{ fontSize:9, fontWeight:700, color:t.textMuted, textTransform:"uppercase", letterSpacing:".5px", marginBottom:4 }}>{it.label}</div>
+                    <div style={{ fontSize:22, fontWeight:800, color:it.color, lineHeight:1 }}>{it.val}</div>
+                    <div style={{ fontSize:9, color:t.textMuted, marginTop:3 }}>auto · soma</div>
+                  </div>
+                ))}
+              </div>
+            </>);
+          })()}
+          <div style={{ marginBottom:20 }} />
+          {cardGrid(<>
+            {card(<>
+              {subH("🏢 Geral")}
+              {fld("indicadores.atenGeral","whatsapp","WhatsApp")}
+              {fld("indicadores.atenGeral","tickets","Tickets")}
+              {fld("telefonia.geral","recebidas","Atendimento via Telefone")}
+              {fld("telefonia.geral","tempoMedio","Tempo Total em Ligações (HH:MM:SS)","text")}
+            </>)}
+            {card(<>
+              {subH("📋 Adm. & Financeiro")}
+              {fld("indicadores.atenAdm","whatsapp","WhatsApp")}
+              {fld("indicadores.atenAdm","tickets","Tickets")}
+              {fld("telefonia.administrativo","recebidas","Atendimento via Telefone")}
+              {fld("telefonia.administrativo","tempoMedio","Tempo Total em Ligações (HH:MM:SS)","text")}
+            </>)}
+          </>)}
+          <div style={{ borderTop:`2px solid ${t.border}`, margin:"24px 0 18px", paddingTop:18 }}>
+            <div style={{ fontSize:14, fontWeight:800, color:t.text, marginBottom:16, textTransform:"uppercase", letterSpacing:".8px" }}>📞 Telefonia</div>
+          </div>
+          {renderTel()}
+        </>}
+
+        {/* ── VENDEDORES ────────────────────────────── */}
+        {indTab === "vendedores" && <>
+          <div style={{ display:"flex", justifyContent:"flex-end", marginBottom:14 }}>
+            <button onClick={() => { setNewName(""); setNewVendorSurname(""); setNewVendorCodigo(""); setNewVendorRegime("clt"); setNewVendorComissao(""); setAddModal("vendor"); }}
+              style={{ background:"#3b82f6", color:"#fff", border:"none", borderRadius:8, padding:"7px 14px", fontSize:12, fontWeight:600, cursor:"pointer", fontFamily:"inherit" }}>+ Adicionar Vendedor</button>
+          </div>
+          {vendors.length === 0 ? (
+            <div style={{ color:t.textMuted, fontSize:13, padding:"12px 0" }}>Nenhum vendedor cadastrado.</div>
+          ) : (
+            <div style={{ display:"grid", gridTemplateColumns:"repeat(auto-fill,minmax(240px,1fr))", gap:14 }}>
+              {vendors.map(v => {
+                const vd = (d.vendedores||{})[v.id] || {};
+                const isEditing = editVendor === v.id;
+                const initials = v.name.split(" ").filter(Boolean).slice(0,2).map(w => w[0].toUpperCase()).join("");
+                const hdrBg = "linear-gradient(135deg,#1e3a5f,#1e5490)";
+                const inpE = { width:"100%", border:"1px solid rgba(255,255,255,0.3)", borderRadius:6, padding:"6px 9px", fontSize:12, color:"#fff", background:"rgba(255,255,255,0.12)", fontFamily:"inherit", outline:"none" };
+                const REGIME = { clt:{label:"CLT",bg:"rgba(59,130,246,0.3)",color:"#93c5fd"}, pj:{label:"PJ",bg:"rgba(249,115,22,0.3)",color:"#fdba74"}, comissionado:{label:"Comissionado",bg:"rgba(34,197,94,0.25)",color:"#86efac"}, nao_comissionado:{label:"Não Comis.",bg:"rgba(100,116,139,0.3)",color:"#94a3b8"} };
+                const reg = REGIME[v.regime] || REGIME.clt;
+                const parts = v.name.trim().split(" ");
+                return (
+                  <div key={v.id} style={{ background:t.card, borderRadius:12, boxShadow:"0 2px 8px rgba(0,0,0,.10)", overflow:"hidden" }}>
+                    {isEditing ? (
+                      <div style={{ padding:"14px 16px", background:hdrBg }}>
+                        <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr", gap:7, marginBottom:7 }}>
+                          <input type="text" value={editVendorData.name} onChange={e=>setEditVendorData(p=>({...p,name:e.target.value}))} placeholder="Nome" style={inpE} autoFocus />
+                          <input type="text" value={editVendorData.surname} onChange={e=>setEditVendorData(p=>({...p,surname:e.target.value}))} placeholder="Sobrenome" style={inpE} />
+                        </div>
+                        <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr", gap:7, marginBottom:7 }}>
+                          <input type="text" value={editVendorData.codigo} onChange={e=>setEditVendorData(p=>({...p,codigo:e.target.value}))} placeholder="Código (ex: V001)" style={inpE} />
+                          <input type="number" value={editVendorData.comissao} onChange={e=>setEditVendorData(p=>({...p,comissao:e.target.value}))} placeholder="% Comissão" min={0} max={100} style={inpE} />
+                        </div>
+                        <select value={editVendorData.regime} onChange={e=>setEditVendorData(p=>({...p,regime:e.target.value}))} style={{ ...inpE, marginBottom:9 }}>
+                          <option value="clt">CLT</option>
+                          <option value="pj">PJ</option>
+                          <option value="comissionado">Comissionado</option>
+                          <option value="nao_comissionado">Não Comissionado</option>
+                        </select>
+                        <div style={{ display:"flex", gap:6, justifyContent:"flex-end" }}>
+                          <button onClick={() => setEditVendor(null)} style={{ background:"rgba(255,255,255,0.12)", color:"#fff", border:"1px solid rgba(255,255,255,0.2)", borderRadius:6, padding:"4px 12px", fontSize:11, cursor:"pointer", fontFamily:"inherit" }}>Cancelar</button>
+                          <button onClick={async () => {
+                            const fullName = (editVendorData.name.trim()+" "+editVendorData.surname.trim()).trim();
+                            if (!fullName) return;
+                            const updated = { ...v, name:fullName, codigo:editVendorData.codigo, regime:editVendorData.regime, comissao:editVendorData.comissao };
+                            await setDoc(doc(db,"gc_vendors",v.id), updated);
+                            setVendors(prev => prev.map(x => x.id===v.id ? updated : x).sort((a,b) => a.name.localeCompare(b.name)));
+                            setEditVendor(null);
+                            showGCToast("✓ Salvo");
+                          }} style={{ background:"#22c55e", color:"#fff", border:"none", borderRadius:6, padding:"4px 12px", fontSize:11, fontWeight:600, cursor:"pointer", fontFamily:"inherit" }}>Salvar</button>
+                        </div>
+                      </div>
+                    ) : (
+                      <div style={{ padding:"14px 16px", background:hdrBg }}>
+                        <div style={{ display:"flex", alignItems:"center", gap:10, marginBottom:8 }}>
+                          <div style={{ width:38, height:38, borderRadius:"50%", background:"rgba(255,255,255,0.18)", border:"2px solid rgba(255,255,255,0.3)", display:"flex", alignItems:"center", justifyContent:"center", fontSize:14, fontWeight:800, color:"#fff", flexShrink:0 }}>{initials}</div>
+                          <div style={{ flex:1, minWidth:0 }}>
+                            <div style={{ fontWeight:700, fontSize:14, color:"#fff", lineHeight:1.2 }}>{v.name}</div>
+                            {v.codigo && <div style={{ fontSize:10, color:"rgba(255,255,255,0.6)", marginTop:2 }}>Cód: {v.codigo}</div>}
+                          </div>
+                          <div style={{ display:"flex", gap:5, flexShrink:0 }}>
+                            <button onClick={() => { setEditVendorData({ name:parts[0]||"", surname:parts.slice(1).join(" ")||"", codigo:v.codigo||"", regime:v.regime||"clt", comissao:v.comissao||"" }); setEditVendor(v.id); }}
+                              style={{ background:"rgba(255,255,255,0.15)", border:"none", borderRadius:6, padding:"4px 8px", cursor:"pointer", color:"#fff", fontSize:12 }}>✏️</button>
+                            <button onClick={() => setConfDel({ type:"vendor", id:v.id, name:v.name })}
+                              style={{ background:"rgba(239,68,68,.25)", border:"none", borderRadius:6, padding:"4px 8px", cursor:"pointer", color:"#fca5a5", fontSize:12 }}>🗑️</button>
+                          </div>
+                        </div>
+                        <div style={{ display:"flex", gap:6, flexWrap:"wrap" }}>
+                          <span style={{ background:reg.bg, color:reg.color, padding:"2px 8px", borderRadius:10, fontSize:10, fontWeight:700 }}>{reg.label}</span>
+                          {v.comissao && <span style={{ background:"rgba(34,197,94,0.2)", color:"#86efac", padding:"2px 8px", borderRadius:10, fontSize:10, fontWeight:700 }}>{v.comissao}% comissão</span>}
+                        </div>
+                      </div>
+                    )}
+                    <div style={{ padding:"14px 16px" }}>
+                      {fldCur("indicadores.vendedores."+v.id,"valor","Valor Vendas Novas")}
+                      {fldCur("indicadores.vendedores."+v.id,"valorCrossSell","Valor de Cross Sell")}
+                      <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr", gap:"0 12px" }}>
+                        {fld("indicadores.vendedores."+v.id,"leadsTrab","Leads Trabalhados")}
+                        {fld("indicadores.vendedores."+v.id,"leadsDesq","Leads Desqualificados")}
+                        {fld("indicadores.vendedores."+v.id,"leadsConv","Leads Convertidos")}
+                      </div>
+                      {(() => {
+                        const ticketMedio = vd.valor && vd.leadsConv && +vd.leadsConv > 0 ? +vd.valor / +vd.leadsConv : null;
+                        const valorComis  = vd.valor && v.comissao ? +vd.valor * +v.comissao / 100 : null;
+                        const chip = (label, value, color, sub) => (
+                          <div style={{ flex:1, textAlign:"center", padding:"8px 6px", background:t.pageBg, borderRadius:8, border:`1px solid ${t.border}` }}>
+                            <div style={{ fontSize:9, fontWeight:700, color:t.textMuted, textTransform:"uppercase", letterSpacing:".5px", marginBottom:3 }}>{label}</div>
+                            <div style={{ fontSize:15, fontWeight:800, color, lineHeight:1 }}>{value ? gcFmtBRL(String(value.toFixed(2))) : "—"}</div>
+                            <div style={{ fontSize:9, color:t.textMuted, marginTop:2 }}>{sub}</div>
+                          </div>
+                        );
+                        return (
+                          <div style={{ display:"flex", gap:8, marginTop:12, paddingTop:12, borderTop:`1px solid ${t.border}` }}>
+                            {chip("Ticket Médio", ticketMedio, "#3b82f6", "auto · valor÷conv.")}
+                            {chip("Comissão", valorComis, "#22c55e", `auto · ${v.comissao||0}% do valor`)}
+                          </div>
+                        );
+                      })()}
+                    </div>
+                  </div>
+                );
+            })}
+          </div>
+          )}
+        </>}
+
+        {/* ── COLABORADORES ─────────────────────────── */}
+        {indTab === "colaboradores" && <>
+          <div style={{ display:"flex", justifyContent:"flex-end", marginBottom:14 }}>
+            <button onClick={() => { setNewName(""); setNewSurname(""); setNewDept("geral"); setAddModal("collab"); }}
+              style={{ background:"#3b82f6", color:"#fff", border:"none", borderRadius:8, padding:"7px 14px", fontSize:12, fontWeight:600, cursor:"pointer", fontFamily:"inherit" }}>+ Adicionar Colaborador</button>
+          </div>
+          {geralCollabs.length > 0 && <>
+            <div style={{ fontSize:12, fontWeight:700, color:t.textMuted, marginBottom:12, textTransform:"uppercase", letterSpacing:".5px" }}>🏢 Departamento Geral</div>
+            <div style={{ display:"grid", gridTemplateColumns:"repeat(auto-fill,minmax(295px,1fr))", gap:14, marginBottom:22 }}>
+              {geralCollabs.map(c => colabCard(c, "linear-gradient(135deg,#1e3a5f,#1e4976)"))}
+            </div>
+          </>}
+          {admCollabs.length > 0 && <>
+            <div style={{ fontSize:12, fontWeight:700, color:t.textMuted, marginBottom:12, textTransform:"uppercase", letterSpacing:".5px" }}>📋 Departamento Adm. & Financeiro</div>
+            <div style={{ display:"grid", gridTemplateColumns:"repeat(auto-fill,minmax(295px,1fr))", gap:14 }}>
+              {admCollabs.map(c => colabCard(c, "linear-gradient(135deg,#3d1a5f,#4a1a76)"))}
+            </div>
+          </>}
+          {geralCollabs.length === 0 && admCollabs.length === 0 && (
+            <div style={{ color:t.textMuted, fontSize:13, padding:"12px 0" }}>Nenhum colaborador cadastrado. Adicione na aba Colaboradores.</div>
+          )}
+        </>}
+      </>
+    );
+  };
+
+  const renderVendas = () => {
+    const d = md.vendas || {};
+    const btnStyle = { background:"#3b82f6", color:"#fff", border:"none", borderRadius:8, padding:"5px 12px", fontSize:12, fontWeight:600, cursor:"pointer", fontFamily:"inherit" };
+    return (
+      <div style={{ background:t.card, borderRadius:12, boxShadow:"0 1px 3px rgba(0,0,0,.08)", overflow:"hidden" }}>
+        <div style={{ padding:"14px 18px", borderBottom:`1px solid ${t.border}`, display:"flex", alignItems:"center", justifyContent:"space-between" }}>
+          <span style={{ fontSize:11, fontWeight:700, color:t.textMuted, textTransform:"uppercase", letterSpacing:".5px" }}>💼 Desempenho por Vendedor</span>
+          <button onClick={() => { setNewName(""); setAddModal("vendor"); }} style={btnStyle}>+ Adicionar Vendedor</button>
+        </div>
+        <div style={{ overflowX:"auto" }}>
+          <table style={{ width:"100%", borderCollapse:"collapse" }}>
+            <thead>
+              <tr>{["Vendedor","Leads","Propostas","Fechamentos","Faturamento (R$)","Conv.",""].map((h,i)=>(
+                <th key={i} style={{ background:t.thead, padding:"9px 14px", textAlign:"left", fontSize:11, fontWeight:600, color:t.textMuted, textTransform:"uppercase", letterSpacing:".3px" }}>{h}</th>
+              ))}</tr>
+            </thead>
+            <tbody>
+              {vendors.length === 0 ? (
+                <tr><td colSpan={7} style={{ padding:22, textAlign:"center", color:t.textMuted, fontSize:13 }}>Nenhum vendedor cadastrado.</td></tr>
+              ) : vendors.map(v => {
+                const vd = d[v.id] || {};
+                const cv = gcPct(vd.fechamentos, vd.leads);
+                return (
+                  <tr key={v.id}>
+                    <td style={{ padding:"9px 14px", fontSize:13, color:t.text, borderTop:`1px solid ${t.border}` }}><strong>{v.name}</strong></td>
+                    {["leads","propostas","fechamentos"].map(k => (
+                      <td key={k} style={{ padding:"5px 10px", borderTop:`1px solid ${t.border}` }}>
+                        <input type="number" defaultValue={vd[k]||""} placeholder="0"
+                          style={{ border:"none", background:"transparent", fontSize:13, width:80, color:t.text, padding:"2px 4px", fontFamily:"inherit" }}
+                          onFocus={e => e.target.style.background = dark?"#1d3461":"#f0f7ff"}
+                          onBlur={e => { e.target.style.background="transparent"; saveField("vendas."+v.id, k, e.target.value); }} />
+                      </td>
+                    ))}
+                    <td style={{ padding:"5px 10px", borderTop:`1px solid ${t.border}` }}>
+                      <input type="text" defaultValue={vd.faturamento ? gcFmtBRL(vd.faturamento) : ""} placeholder="R$ 0,00"
+                        style={{ border:"none", background:"transparent", fontSize:13, width:110, color:t.text, padding:"2px 4px", fontFamily:"inherit" }}
+                        onFocus={e => e.target.style.background = dark?"#1d3461":"#f0f7ff"}
+                        onChange={e => { e.target.value = gcFmtBRLLive(e.target.value); }}
+                        onBlur={e => {
+                          e.target.style.background = "transparent";
+                          saveField("vendas."+v.id, "faturamento", gcParseBRL(e.target.value));
+                        }} />
+                    </td>
+                    <td style={{ padding:"9px 14px", fontSize:13, fontWeight:600, color:+cv>=20?"#22c55e":+cv>=10?"#f59e0b":"#ef4444", borderTop:`1px solid ${t.border}` }}>{cv}%</td>
+                    <td style={{ padding:"9px 14px", borderTop:`1px solid ${t.border}` }}>
+                      <button onClick={() => setConfDel({ type:"vendor", id:v.id, name:v.name })}
+                        style={{ background:"#fee2e2", color:"#ef4444", border:"none", borderRadius:6, padding:"3px 8px", cursor:"pointer", fontSize:11, fontWeight:600, fontFamily:"inherit" }}>🗑️</button>
+                    </td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        </div>
+      </div>
+    );
+  };
+
+  const deptBlock = (path, label, icon) => card(<>
+    {cardH(`${icon} ${label}`)}
+    {fld(path,"total","Total de Atendimentos")}
+    {fld(path,"resolvidos","Resolvidos")}
+    {fld(path,"tempoMedio","Tempo Médio Resposta (min)")}
+    {fld(path,"nps","NPS (0–100)")}
+    {fld(path,"satisfacao","Taxa de Satisfação (%)")}
+  </>);
+
+  const renderAten = () => cardGrid(<>
+    {deptBlock("atendimento.geral","Departamento Geral","🏢")}
+    {deptBlock("atendimento.administrativo","Departamento Administrativo","📋")}
+  </>);
+
+  const telBlock = (path, label, icon) => card(<>
+    {cardH(`${icon} ${label}`)}
+    {fld(path,"recebidas","Chamadas Recebidas")}
+    {fld(path,"tempoMedio","Tempo Total em Ligações (HH:MM:SS)","text")}
+  </>);
+
+  const handleXlsxImport = async (e) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    e.target.value = "";
+    try {
+      const buf  = await file.arrayBuffer();
+      const wb   = XLSX.read(buf, { type:"array" });
+      const ws   = wb.Sheets[wb.SheetNames[0]];
+      const rows = XLSX.utils.sheet_to_json(ws, { defval:"" });
+
+      // Normalize header keys: lowercase, trim
+      const norm = (k) => String(k).toLowerCase().replace(/\s+/g,"");
+      const normRows = rows.map(r => {
+        const o = {};
+        Object.keys(r).forEach(k => { o[norm(k)] = r[k]; });
+        return o;
+      });
+
+      // Match agent name to collaborator (case-insensitive, partial)
+      const matchColab = (agentName) => {
+        const a = String(agentName).toLowerCase().trim();
+        return collabs.find(c => {
+          const cn = c.name.toLowerCase().trim();
+          return cn === a || cn.includes(a) || a.includes(cn);
+        });
+      };
+
+      let newMd = { ...md };
+      let matched = 0, unmatched = [];
+      const geralIds = new Set(collabs.filter(c => c.dept === "geral").map(c => c.id));
+      const admIds   = new Set(collabs.filter(c => c.dept === "administrativo").map(c => c.id));
+      let telGeral = { answered:0, talkSec:0 }, telAdm = { answered:0, talkSec:0 };
+
+      normRows.forEach(row => {
+        const colab = matchColab(row["agent"] ?? row["agente"] ?? "");
+        if (!colab) { unmatched.push(String(row["agent"] ?? row["agente"] ?? "?")); return; }
+        matched++;
+        const path = "indicadores.colab." + colab.id;
+        if (row["answered"]  != null) newMd = gcSet(newMd, path, "telefone",       String(row["answered"]));
+        if (row["pauses"]    != null) newMd = gcSet(newMd, path, "pausas",         String(row["pauses"]));
+        { const s = xlTime(row["aht"]);       if (s > 0) newMd = gcSet(newMd, path, "mediaLigacao",   secToHHMMSS(s)); }
+        { const s = xlTime(row["pausatime"] ?? row["pausetime"]); if (s > 0) newMd = gcSet(newMd, path, "pausaTimeTotal", secToHHMMSS(s)); }
+        { const s = xlTime(row["talktime"]);  if (s > 0) newMd = gcSet(newMd, path, "talkTime",       secToHHMMSS(s)); }
+
+        // Accumulate telefonia totals per dept
+        const ans      = +(row["answered"] || 0);
+        const talkSec  = xlTime(row["talktime"] ?? row["talk time"]);
+        if (geralIds.has(colab.id)) { telGeral.answered += ans; telGeral.talkSec += talkSec; }
+        else if (admIds.has(colab.id)) { telAdm.answered += ans; telAdm.talkSec += talkSec; }
+      });
+
+      // Fill telefonia fields
+      if (telGeral.answered) newMd = gcSet(newMd, "telefonia.geral", "recebidas",  String(telGeral.answered));
+      if (telGeral.talkSec)  newMd = gcSet(newMd, "telefonia.geral", "tempoMedio", secToHHMMSS(telGeral.talkSec));
+      if (telAdm.answered)   newMd = gcSet(newMd, "telefonia.administrativo", "recebidas",  String(telAdm.answered));
+      if (telAdm.talkSec)    newMd = gcSet(newMd, "telefonia.administrativo", "tempoMedio", secToHHMMSS(telAdm.talkSec));
+
+      setMd(newMd);
+      setMdKey(k => k + 1);
+      await setDoc(doc(db, "gc_months", curMonth), newMd, { merge: true });
+      const msg = unmatched.length
+        ? `✓ ${matched} importado(s). Não encontrado(s): ${unmatched.join(", ")}`
+        : `✓ ${matched} colaborador(es) importado(s) com sucesso`;
+      showGCToast(msg);
+    } catch (err) {
+      showGCToast("Erro ao ler o arquivo. Verifique o formato.");
+      console.error(err);
+    }
+  };
+
+  const renderTel = () => (
+    <div style={{ background:t.card, borderRadius:12, padding:"18px 22px", display:"flex", alignItems:"center", gap:18, boxShadow:"0 1px 3px rgba(0,0,0,.08)" }}>
+      <div style={{ fontSize:32 }}>📊</div>
+      <div style={{ flex:1 }}>
+        <div style={{ fontWeight:700, fontSize:14, color:t.text, marginBottom:3 }}>Importar relatório de ligações (.xlsx)</div>
+        <div style={{ fontSize:12, color:t.textMuted }}>Colunas esperadas: <strong>Agent, Answered, Pauses, Pausa Time, Talk Time, AHT</strong></div>
+        <div style={{ fontSize:11, color:t.textMuted, marginTop:2 }}>Preenche automaticamente: Telefone, Pausas, Chamadas Recebidas, Tempo Total em Ligações, Média em Ligação e Média Pausa/dia.</div>
+      </div>
+      <input ref={xlsxRef} type="file" accept=".xlsx,.xls" style={{ display:"none" }} onChange={handleXlsxImport} />
+      <button onClick={() => xlsxRef.current?.click()}
+        style={{ background:"#3b82f6", color:"#fff", border:"none", borderRadius:9, padding:"9px 18px", fontSize:13, fontWeight:600, cursor:"pointer", fontFamily:"inherit", whiteSpace:"nowrap" }}>
+        📎 Selecionar arquivo
+      </button>
+    </div>
+  );
+
+  const renderColab = () => {
+    const addBtn = { background:"#3b82f6", color:"#fff", border:"none", borderRadius:8, padding:"7px 14px", fontSize:12, fontWeight:600, cursor:"pointer", fontFamily:"inherit" };
+    return (
+      <>
+        <div style={{ display:"flex", justifyContent:"flex-end", marginBottom:14 }}>
+          <button onClick={() => { setNewName(""); setNewDept("geral"); setAddModal("collab"); }} style={addBtn}>+ Adicionar Colaborador</button>
+        </div>
+        {collabs.length === 0 ? (
+          <div style={{ textAlign:"center", padding:36, color:t.textMuted, background:t.card, borderRadius:12 }}>Nenhum colaborador cadastrado.</div>
+        ) : (
+          <div style={{ display:"grid", gridTemplateColumns:"repeat(auto-fill,minmax(275px,1fr))", gap:14 }}>
+            {collabs.map(c => {
+              const cd = (md.rh || {})[c.id] || {};
+              return (
+                <div key={c.id} style={{ background:t.card, borderRadius:12, boxShadow:"0 1px 3px rgba(0,0,0,.08)", overflow:"hidden" }}>
+                  <div style={{ padding:"12px 16px", background:"linear-gradient(135deg,#1e2d47,#2d3f55)", color:"#fff", display:"flex", alignItems:"center", justifyContent:"space-between" }}>
+                    <span style={{ fontWeight:600, fontSize:14 }}>👤 {c.name}</span>
+                    <div style={{ display:"flex", alignItems:"center", gap:7 }}>
+                      <span style={{ background:c.dept==="geral"?"#dbeafe":"#fce7f3", color:c.dept==="geral"?"#1d4ed8":"#9d174d", padding:"2px 7px", borderRadius:20, fontSize:10, fontWeight:600 }}>
+                        {c.dept==="geral"?"Geral":"Adm."}
+                      </span>
+                      <button onClick={() => setConfDel({ type:"collab", id:c.id, name:c.name })}
+                        style={{ background:"rgba(239,68,68,.2)", color:"#fca5a5", border:"none", borderRadius:6, padding:"3px 7px", cursor:"pointer", fontSize:11, fontFamily:"inherit" }}>🗑️</button>
+                    </div>
+                  </div>
+                  <div style={{ padding:"14px 16px" }}>
+                    {[["freq","Frequência (%)"],["pont","Pontualidade (%)"],["perf","Performance (%)"],["meta","Meta Individual (%)"]].map(([k,lbl]) => (
+                      <div key={k} style={{ display:"flex", alignItems:"center", justifyContent:"space-between", marginBottom:9 }}>
+                        <label style={{ fontSize:12, color:t.textSub }}>{lbl}</label>
+                        <input type="number" min={0} max={100} defaultValue={cd[k]||""} placeholder="100"
+                          style={{ width:70, border:`1.5px solid ${t.border}`, borderRadius:6, padding:"3px 7px", fontSize:13, textAlign:"right", color:t.text, background:t.inputBg, fontFamily:"inherit", outline:"none" }}
+                          onBlur={e => saveField("rh."+c.id, k, e.target.value)} />
+                      </div>
+                    ))}
+                    <div style={{ marginTop:10 }}>
+                      <label style={{ fontSize:10, fontWeight:700, color:t.textMuted, display:"block", marginBottom:3, textTransform:"uppercase", letterSpacing:".5px" }}>Observações</label>
+                      <textarea rows={2} defaultValue={cd.obs||""}
+                        style={{ width:"100%", border:`1.5px solid ${t.border}`, borderRadius:8, padding:"6px 9px", fontSize:12, resize:"none", color:t.text, background:t.inputBg, fontFamily:"inherit", outline:"none" }}
+                        onBlur={e => saveField("rh."+c.id, "obs", e.target.value)} />
+                    </div>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        )}
+      </>
+    );
+  };
+
+  const renderConf = () => cardGrid(
+    card(<>
+      {cardH("ℹ️ Armazenamento")}
+      <p style={{ fontSize:13, color:t.textSub, lineHeight:1.6 }}>Dados salvos no Firebase — acessíveis de qualquer dispositivo.</p>
+    </>)
+  );
+
+  const generateReport = async () => {
+    if (!reportCfg.months.length) { showGCToast("⚠ Selecione ao menos um mês."); return; }
+    const MN_SHORT = ["Jan","Fev","Mar","Abr","Mai","Jun","Jul","Ago","Set","Out","Nov","Dez"];
+    const sortedMonths = [...reportCfg.months].sort((a,b) => a-b);
+    const monthsArr = await Promise.all(sortedMonths.map(async mo => {
+      const key = `${reportCfg.year}-${String(mo).padStart(2,"0")}`;
+      const label = `${MN_SHORT[mo-1]}/${String(reportCfg.year).slice(2)}`;
+      let data = {};
+      if (key === curMonth) { data = md; }
+      else {
+        try { const snap = await getDoc(doc(db,"gc_months",key)); data = snap.exists()?snap.data():{}; } catch {}
+      }
+      return { key, label, data };
+    }));
+    const html = buildReportHtml(monthsArr, vendors, collabs, reportCfg);
+    const win = window.open("", "_blank");
+    if (!win) { showGCToast("⚠ Permissão de popup bloqueada — libere popups para este site."); return; }
+    win.document.write(html);
+    win.document.close();
+    setTimeout(() => { try { win.print(); } catch {} }, 600);
+    setShowReportModal(false);
+  };
+
+  const SEC_NAV = [
+    { id:"dashboard",      icon:"📊", label:"Dashboard" },
+    { id:"metas",          icon:"🎯", label:"Metas" },
+    { id:"indicadores",    icon:"📈", label:"Indicadores" },
+    { id:"config",         icon:"⚙️", label:"Config." },
+  ];
+
+  const SEC_TITLES = {
+    dashboard:"📊 Dashboard",
+    metas:"🎯 Metas", funil:"📊 Funil de Leads", inadimplencia:"⚠️ Inadimplência",
+    indicadores:"📈 Indicadores", atendimento:"🎧 Atendimento",
+    colaboradores:"👥 Colaboradores", config:"⚙️ Configurações"
+  };
+
+  const secRenders = {
+    dashboard:renderDash,
+    metas:renderMetas, funil:renderFunil, inadimplencia:renderInad,
+    indicadores:renderIndicadores, atendimento:renderAten,
+    colaboradores:renderColab, config:renderConf
+  };
+
+  if (loading) return (
+    <div style={{ display:"flex", alignItems:"center", justifyContent:"center", height:"100vh", background:t.pageBg, color:t.text, ...FF }}>
+      Carregando...
+    </div>
+  );
+
+  const modalBtnSec = { background:t.btnSecBg, color:t.btnSecText, border:"none", borderRadius:8, padding:"8px 14px", fontSize:13, fontWeight:600, cursor:"pointer", fontFamily:"inherit" };
+  const modalBtnPri = { background:"#3b82f6", color:"#fff", border:"none", borderRadius:8, padding:"8px 14px", fontSize:13, fontWeight:600, cursor:"pointer", fontFamily:"inherit" };
+
+  return (
+    <div style={{ display:"flex", flexDirection:"column", height:"100vh", ...FF }}>
+
+      {/* Header */}
+      <div style={{ background:"#0f172a", height:58, display:"flex", alignItems:"center", justifyContent:"space-between", padding:"0 22px", flexShrink:0, boxShadow:"0 2px 12px rgba(0,0,0,.4)" }}>
+        <div style={{ display:"flex", alignItems:"center", gap:14 }}>
+          <button onClick={onBack} style={{ background:"rgba(255,255,255,.07)", border:"1px solid rgba(255,255,255,.1)", color:"#94a3b8", borderRadius:8, padding:"5px 11px", cursor:"pointer", fontSize:12, ...FF }}>← Voltar</button>
+          <span style={{ fontSize:20 }}>📊</span>
+          <span style={{ color:"#f8fafc", fontWeight:800, fontSize:16 }}>Gestão Comercial</span>
+        </div>
+        <div style={{ display:"flex", alignItems:"center", gap:14 }}>
+          <DarkToggle />
+          <button onClick={onLogout} style={{ background:"rgba(255,255,255,.07)", border:"1px solid rgba(255,255,255,.1)", color:"#94a3b8", borderRadius:8, padding:"5px 11px", cursor:"pointer", fontSize:12, ...FF }}>Sair</button>
+        </div>
+      </div>
+
+      {/* Body */}
+      <div style={{ display:"flex", flex:1, overflow:"hidden" }}>
+
+        {/* Sidebar */}
+        <aside style={{ width:205, background:"#1e2d47", display:"flex", flexDirection:"column", flexShrink:0, overflowY:"auto" }}>
+          {SEC_NAV.map(s => (
+            <div key={s.id} onClick={() => setCurSec(s.id)}
+              style={{ display:"flex", alignItems:"center", gap:9, padding:"10px 16px", cursor:"pointer", fontSize:13, transition:"all .15s",
+                borderLeft: curSec===s.id ? "3px solid #60a5fa" : "3px solid transparent",
+                background: curSec===s.id ? "#2d3f55" : "transparent",
+                color: curSec===s.id ? "#60a5fa" : "#94a3b8" }}>
+              <span style={{ fontSize:14, width:17, textAlign:"center" }}>{s.icon}</span>{s.label}
+            </div>
+          ))}
+        </aside>
+
+        {/* Main */}
+        <div style={{ flex:1, display:"flex", flexDirection:"column", overflow:"hidden" }}>
+
+          {/* Year + Month bar */}
+          <div style={{ background:"#1a2535", borderBottom:"1px solid #0f172a", flexShrink:0 }}>
+            {/* Year row */}
+            <div style={{ padding:"8px 18px 4px", display:"flex", alignItems:"center", gap:6 }}>
+              {availYears.map(y => (
+                <button key={y}
+                  onClick={() => setCurMonth(`${y}-${String(curMonthNum).padStart(2,"0")}`)}
+                  style={{ padding:"5px 16px", borderRadius:20, fontSize:13, fontWeight:700, cursor:"pointer", border:"none", fontFamily:"inherit", transition:"all .15s",
+                    background: y===curYear ? "#3b82f6" : "rgba(255,255,255,.08)",
+                    color:      y===curYear ? "#fff"    : "#64748b" }}>
+                  {y}
+                </button>
+              ))}
+              <button
+                onClick={() => setAvailYears(prev => [...prev, Math.max(...prev)+1])}
+                title="Adicionar próximo ano"
+                style={{ width:26, height:26, borderRadius:"50%", background:"#22c55e", color:"#fff", border:"none", cursor:"pointer", fontSize:17, lineHeight:1, display:"flex", alignItems:"center", justifyContent:"center", fontFamily:"inherit", flexShrink:0 }}>+</button>
+            </div>
+            {/* Month row */}
+            <div style={{ padding:"4px 18px 8px", display:"flex", alignItems:"center", gap:4 }}>
+              {["Jan","Fev","Mar","Abr","Mai","Jun","Jul","Ago","Set","Out","Nov","Dez"].map((mName, i) => {
+                const mNum = i + 1;
+                const active = mNum === curMonthNum;
+                return (
+                  <button key={mName}
+                    onClick={() => setCurMonth(`${curYear}-${String(mNum).padStart(2,"0")}`)}
+                    style={{ padding:"4px 12px", borderRadius:20, fontSize:12, cursor:"pointer", border:"none", fontFamily:"inherit", transition:"all .15s",
+                      background: active ? "#0d9488" : "rgba(255,255,255,.06)",
+                      color:      active ? "#fff"    : "#475569",
+                      fontWeight: active ? 600       : 400 }}>
+                    {mName}
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+
+          {/* Content — key forces remount when data loads */}
+          <div key={mdKey} style={{ flex:1, overflowY:"auto", padding:20, background:t.pageBg }}>
+            <div style={{ fontSize:16, fontWeight:700, color:t.text, marginBottom:16 }}>{SEC_TITLES[curSec]||curSec}</div>
+            {(secRenders[curSec] || (() => null))()}
+          </div>
+
+        </div>
+      </div>
+
+      {/* Report modal */}
+      {showReportModal && (
+        <Overlay>
+          <div style={{ background:t.card, borderRadius:16, padding:28, width:"100%", maxWidth:430, boxShadow:"0 20px 60px rgba(0,0,0,.25)" }}>
+            <div style={{ display:"flex", alignItems:"center", justifyContent:"space-between", marginBottom:20 }}>
+              <h2 style={{ margin:0, fontSize:17, fontWeight:700, color:t.text }}>🖨️ Emitir Relatório</h2>
+              <button onClick={() => setShowReportModal(false)} style={{ background:t.btnSecBg, border:"none", borderRadius:8, width:32, height:32, cursor:"pointer", fontSize:16, color:t.text, display:"flex", alignItems:"center", justifyContent:"center" }}>×</button>
+            </div>
+
+            <div style={{ marginBottom:18 }}>
+              <label style={{ display:"block", fontSize:11, fontWeight:700, color:t.textMuted, textTransform:"uppercase", letterSpacing:".5px", marginBottom:8 }}>Período</label>
+              <div style={{ marginBottom:10 }}>
+                <label style={{ display:"block", fontSize:11, color:t.textMuted, marginBottom:4 }}>Ano</label>
+                <input type="number" value={reportCfg.year} min={2020} max={2099}
+                  onChange={e => setReportCfg(p => ({ ...p, year:+e.target.value }))}
+                  style={{ width:100, border:`1.5px solid ${t.border}`, borderRadius:8, padding:"7px 10px", fontSize:13, color:t.text, background:t.inputBg, fontFamily:"inherit", outline:"none" }} />
+              </div>
+              <label style={{ display:"block", fontSize:11, color:t.textMuted, marginBottom:6 }}>Meses <span style={{ color:t.textMuted, fontStyle:"italic" }}>(selecione um ou mais)</span></label>
+              <div style={{ display:"grid", gridTemplateColumns:"repeat(4,1fr)", gap:6 }}>
+                {["Jan","Fev","Mar","Abr","Mai","Jun","Jul","Ago","Set","Out","Nov","Dez"].map((m,i) => {
+                  const mo = i+1;
+                  const sel = reportCfg.months.includes(mo);
+                  return (
+                    <div key={mo} onClick={() => setReportCfg(p => ({ ...p, months: sel ? p.months.filter(x=>x!==mo) : [...p.months, mo] }))}
+                      style={{ padding:"6px 0", textAlign:"center", borderRadius:8, cursor:"pointer", fontSize:12, fontWeight:700, border:`1.5px solid ${sel?"#6366f1":t.border}`,
+                        background: sel ? (dark?"rgba(99,102,241,0.2)":"rgba(99,102,241,0.1)") : t.inputBg,
+                        color: sel ? "#818cf8" : t.textMuted, userSelect:"none" }}>
+                      {m}
+                    </div>
+                  );
+                })}
+              </div>
+              {reportCfg.months.length === 0 && <div style={{ fontSize:11, color:"#ef4444", marginTop:5 }}>Selecione ao menos um mês.</div>}
+            </div>
+
+            <div style={{ marginBottom:22 }}>
+              <label style={{ display:"block", fontSize:11, fontWeight:700, color:t.textMuted, textTransform:"uppercase", letterSpacing:".5px", marginBottom:10 }}>Incluir no Relatório</label>
+              {[
+                { key:"metas",         label:"🎯 Metas do Setor" },
+                { key:"comercial",     label:"💼 Comercial (Vendas, Leads, Renovação, Inadimplência)" },
+                { key:"vendedores",    label:"👤 Vendedores" },
+                { key:"atendimentos",  label:"🎧 Atendimentos" },
+                { key:"colaboradores", label:"👥 Colaboradores" },
+              ].map(s => (
+                <div key={s.key} onClick={() => setReportCfg(p => ({ ...p, sections:{ ...p.sections, [s.key]:!p.sections[s.key] }}))}
+                  style={{ display:"flex", alignItems:"center", gap:10, padding:"8px 10px", borderRadius:8, cursor:"pointer", marginBottom:4,
+                    background: reportCfg.sections[s.key] ? (dark?"rgba(99,102,241,0.12)":"rgba(99,102,241,0.06)") : "transparent" }}>
+                  <div style={{ width:18, height:18, borderRadius:5, border:`2px solid ${reportCfg.sections[s.key]?"#6366f1":t.border}`,
+                    background: reportCfg.sections[s.key] ? "#6366f1" : "transparent",
+                    display:"flex", alignItems:"center", justifyContent:"center", flexShrink:0, fontSize:11, color:"#fff", fontWeight:700 }}>
+                    {reportCfg.sections[s.key] ? "✓" : ""}
+                  </div>
+                  <span style={{ fontSize:13, color:t.text }}>{s.label}</span>
+                </div>
+              ))}
+            </div>
+
+            <div style={{ display:"flex", gap:10 }}>
+              <button onClick={() => setShowReportModal(false)}
+                style={{ flex:1, padding:"10px", background:t.btnSecBg, border:"none", borderRadius:9, color:t.btnSecText, fontWeight:600, fontSize:13, cursor:"pointer", fontFamily:"inherit" }}>
+                Cancelar
+              </button>
+              <button onClick={generateReport}
+                style={{ flex:2, padding:"10px", background:"linear-gradient(135deg,#0ea5e9,#6366f1)", border:"none", borderRadius:9, color:"#fff", fontWeight:700, fontSize:13, cursor:"pointer", fontFamily:"inherit" }}>
+                🖨️ Emitir Relatório
+              </button>
+            </div>
+          </div>
+        </Overlay>
+      )}
+
+      {/* Add Vendor / Collab modal */}
+      {addModal && (
+        <Overlay>
+          <div style={{ background:t.card, borderRadius:16, padding:28, width:"100%", maxWidth: addModal==="vendor" ? 460 : 380, boxShadow:"0 20px 60px rgba(0,0,0,.2)" }}>
+            <h2 style={{ margin:"0 0 6px", fontSize:17, color:t.text }}>{addModal==="vendor"?"💼 Adicionar Vendedor":"👤 Adicionar Colaborador"}</h2>
+            <p style={{ color:t.textSub, fontSize:13, marginBottom:18 }}>Aparecerá em todos os meses.</p>
+            {(() => {
+              const inpS = { width:"100%", border:`1.5px solid ${t.border}`, borderRadius:8, padding:"9px 11px", fontSize:13, color:t.text, background:t.inputBg, fontFamily:"inherit", outline:"none" };
+              const lbl = (txt) => <label style={{ display:"block", fontSize:12, color:t.textSub, marginBottom:5, fontWeight:500 }}>{txt}</label>;
+              if (addModal === "vendor") return (<>
+                <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr", gap:10, marginBottom:12 }}>
+                  <div>{lbl("Nome")}<input autoFocus type="text" value={newName} onChange={e=>setNewName(e.target.value)} placeholder="Ex: João" style={inpS} /></div>
+                  <div>{lbl("Sobrenome")}<input type="text" value={newVendorSurname} onChange={e=>setNewVendorSurname(e.target.value)} placeholder="Ex: Silva" style={inpS} /></div>
+                </div>
+                <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr", gap:10, marginBottom:12 }}>
+                  <div>{lbl("Código do Vendedor")}<input type="text" value={newVendorCodigo} onChange={e=>setNewVendorCodigo(e.target.value)} placeholder="Ex: V001" style={inpS} /></div>
+                  <div>{lbl("% Comissão")}<input type="number" min={0} max={100} value={newVendorComissao} onChange={e=>setNewVendorComissao(e.target.value)} placeholder="Ex: 5" style={inpS} /></div>
+                </div>
+                <div style={{ marginBottom:12 }}>{lbl("Regime")}
+                  <select value={newVendorRegime} onChange={e=>setNewVendorRegime(e.target.value)} style={{ ...inpS }}>
+                    <option value="clt">CLT</option>
+                    <option value="pj">PJ</option>
+                    <option value="comissionado">Comissionado</option>
+                    <option value="nao_comissionado">Não Comissionado</option>
+                  </select>
+                </div>
+              </>);
+              return (<>
+                <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr", gap:10, marginBottom:12 }}>
+                  <div>{lbl("Nome")}<input autoFocus type="text" value={newName} onChange={e=>setNewName(e.target.value)} placeholder="Ex: Maria" style={inpS} /></div>
+                  <div>{lbl("Sobrenome")}<input type="text" value={newSurname} onChange={e=>setNewSurname(e.target.value)} placeholder="Ex: Silva" style={inpS} /></div>
+                </div>
+                <div style={{ marginBottom:12 }}>{lbl("Departamento")}
+                  <select value={newDept} onChange={e=>setNewDept(e.target.value)} style={{ ...inpS }}>
+                    <option value="geral">Departamento Geral</option>
+                    <option value="administrativo">Adm. & Financeiro</option>
+                  </select>
+                </div>
+              </>);
+            })()}
+            <div style={{ display:"flex", gap:8, justifyContent:"flex-end", marginTop:18 }}>
+              <button onClick={() => setAddModal(null)} style={modalBtnSec}>Cancelar</button>
+              <button onClick={async () => {
+                const n = newName.trim();
+                if (!n) return;
+                if (addModal === "vendor") {
+                  const fullName = (n+" "+newVendorSurname.trim()).trim();
+                  const v = { id:genId(), name:fullName, codigo:newVendorCodigo.trim(), regime:newVendorRegime, comissao:newVendorComissao };
+                  await setDoc(doc(db,"gc_vendors",v.id), v);
+                  setVendors(prev => [...prev, v].sort((a,b) => a.name.localeCompare(b.name)));
+                } else {
+                  const fullName = (n+" "+newSurname.trim()).trim();
+                  const c = { id:genId(), name:fullName, dept:newDept };
+                  await setDoc(doc(db,"gc_collabs",c.id), c);
+                  setCollabs(prev => [...prev, c].sort((a,b) => a.name.localeCompare(b.name)));
+                }
+                setAddModal(null);
+                showGCToast("✓ Salvo");
+              }} style={modalBtnPri}>Salvar</button>
+            </div>
+          </div>
+        </Overlay>
+      )}
+
+      {/* Confirm delete */}
+      {confDel && (
+        <ConfirmDialog
+          message={`Remover "${confDel.name}"? Os dados mensais serão mantidos.`}
+          onCancel={() => setConfDel(null)}
+          onConfirm={async () => {
+            if (confDel.type === "vendor") {
+              await deleteDoc(doc(db,"gc_vendors",confDel.id));
+              setVendors(prev => prev.filter(v => v.id !== confDel.id));
+            } else {
+              await deleteDoc(doc(db,"gc_collabs",confDel.id));
+              setCollabs(prev => prev.filter(c => c.id !== confDel.id));
+            }
+            setConfDel(null);
+            showGCToast("✓ Removido");
+          }}
+        />
+      )}
+
+      {gcToast && <Toast msg={gcToast} />}
+    </div>
+  );
+}
 
 export default function App() {
   const [view,     setView]     = useState("login");
@@ -1861,15 +3707,17 @@ export default function App() {
       window.removeEventListener("keydown",  onActivity);
     };
   }, [user?.id]);
-  const goHome = () => { setOpenPage(null); setView("home"); };
-  const goPage = (pg, emps) => { setOpenPage(pg); setOpenEmps(emps||[]); setView("page"); };
+  const goHome    = () => { setOpenPage(null); setView("home"); };
+  const goPage    = (pg, emps) => { setOpenPage(pg); setOpenEmps(emps||[]); setView("page"); };
+  const goGestao  = () => setView("gestao");
 
   return (
     <ThemeCtx.Provider value={{ t, dark, toggle }}>
-      {view === "admin" && <AdminPanel onBack={() => setView("login")} />}
-      {view === "login" && <LoginScreen onLogin={u=>{setUser(u);setView("home");}} onAdmin={()=>setView("admin")} />}
-      {view === "page" && openPage && <PageDetail page={openPage} initEmployees={openEmps} user={user} onBack={goHome} onLogout={logout} />}
-      {view === "home" && user && <HomeScreen user={user} onOpenPage={goPage} onLogout={logout} />}
+      {view === "admin"   && <AdminPanel onBack={() => setView("login")} onGestao={goGestao} />}
+      {view === "login"   && <LoginScreen onLogin={u=>{setUser(u);setView("home");}} onAdmin={()=>setView("admin")} />}
+      {view === "page"    && openPage && <PageDetail page={openPage} initEmployees={openEmps} user={user} onBack={goHome} onLogout={logout} />}
+      {view === "gestao"  && <GestaoComercial onBack={goHome} onLogout={logout} />}
+      {view === "home"    && user && <HomeScreen user={user} onOpenPage={goPage} onLogout={logout} onGestao={goGestao} />}
     </ThemeCtx.Provider>
   );
 }

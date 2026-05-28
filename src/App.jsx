@@ -3376,6 +3376,34 @@ function GestaoComercial({ onBack, onLogout }) {
     setShowReportModal(false);
   };
 
+  const publishReport = async () => {
+    if (!reportCfg.months.length) { showGCToast("⚠ Selecione ao menos um mês."); return; }
+    const MN_SHORT = ["Jan","Fev","Mar","Abr","Mai","Jun","Jul","Ago","Set","Out","Nov","Dez"];
+    const sortedMonths = [...reportCfg.months].sort((a,b) => a-b);
+    const monthsArr = await Promise.all(sortedMonths.map(async mo => {
+      const key = `${reportCfg.year}-${String(mo).padStart(2,"0")}`;
+      const label = `${MN_SHORT[mo-1]}/${String(reportCfg.year).slice(2)}`;
+      let data = {};
+      if (key === curMonth) { data = md; }
+      else { try { const snap = await getDoc(doc(db,"gc_months",key)); data = snap.exists()?snap.data():{}; } catch {} }
+      return { key, label, data };
+    }));
+    const html = buildReportHtml(monthsArr, vendors, collabs, reportCfg);
+    const bimestre = Math.ceil(sortedMonths[0] / 2);
+    const BIM_LABELS = ["1°","2°","3°","4°","5°","6°"];
+    const docId = `${reportCfg.year}-B${bimestre}`;
+    try {
+      await setDoc(doc(db, "relatorios_publicos", docId), {
+        html, year: reportCfg.year, bimestre,
+        label: `${BIM_LABELS[bimestre-1]} Bimestre / ${reportCfg.year}`,
+        months: monthsArr.map(m => m.label),
+        publishedAt: new Date().toISOString(),
+      });
+      showGCToast("✅ Relatório publicado! Acesse: " + window.location.origin + "/?relatorio=1");
+      setShowReportModal(false);
+    } catch(e) { showGCToast("❌ Erro ao publicar: " + (e.message||e)); }
+  };
+
   const SEC_NAV = [
     { id:"dashboard",      icon:"📊", label:"Dashboard" },
     { id:"metas",          icon:"🎯", label:"Metas" },
@@ -3564,6 +3592,10 @@ function GestaoComercial({ onBack, onLogout }) {
                 style={{ flex:2, padding:"10px", background:"linear-gradient(135deg,#0ea5e9,#6366f1)", border:"none", borderRadius:9, color:"#fff", fontWeight:700, fontSize:13, cursor:"pointer", fontFamily:"inherit" }}>
                 🖨️ Emitir Relatório
               </button>
+              <button onClick={publishReport}
+                style={{ flex:2, padding:"10px", background:"linear-gradient(135deg,#10b981,#059669)", border:"none", borderRadius:9, color:"#fff", fontWeight:700, fontSize:13, cursor:"pointer", fontFamily:"inherit" }}>
+                🌐 Publicar
+              </button>
             </div>
           </div>
         </Overlay>
@@ -3657,8 +3689,139 @@ function GestaoComercial({ onBack, onLogout }) {
   );
 }
 
+// ── Página Pública de Relatórios ─────────────────────────────────────
+function PublicReport() {
+  const [reports,  setReports]  = useState([]);
+  const [loading,  setLoading]  = useState(true);
+  const [selYear,  setSelYear]  = useState(null);
+  const [selBim,   setSelBim]   = useState(null);
+
+  useEffect(() => {
+    getDocs(collection(db, "relatorios_publicos"))
+      .then(snap => {
+        const data = snap.docs.map(d => ({ id: d.id, ...d.data() }))
+          .sort((a, b) => b.year - a.year || b.bimestre - a.bimestre);
+        setReports(data);
+        if (data.length) { setSelYear(data[0].year); setSelBim(data[0].bimestre); }
+      })
+      .catch(() => {})
+      .finally(() => setLoading(false));
+  }, []);
+
+  const BIM_LABELS  = ["1°","2°","3°","4°","5°","6°"];
+  const BIM_MONTHS  = [["Jan","Fev"],["Mar","Abr"],["Mai","Jun"],["Jul","Ago"],["Set","Out"],["Nov","Dez"]];
+  const years       = [...new Set(reports.map(r => r.year))].sort((a,b) => b-a);
+  const yearReports = reports.filter(r => r.year === selYear);
+  const selected    = yearReports.find(r => r.bimestre === selBim);
+
+  const pickYear = y => {
+    setSelYear(y);
+    const yr = reports.filter(r => r.year === y);
+    if (yr.length) setSelBim(yr.sort((a,b) => b.bimestre-a.bimestre)[0].bimestre);
+  };
+
+  const download = () => {
+    if (!selected) return;
+    const blob = new Blob([selected.html], { type:"text/html;charset=utf-8" });
+    const a = document.createElement("a");
+    a.href = URL.createObjectURL(blob);
+    a.download = `relatorio-${selYear}-B${selBim}.html`;
+    a.click();
+  };
+
+  if (loading) return (
+    <div style={{ display:"flex", alignItems:"center", justifyContent:"center", height:"100vh",
+      background:"#0f172a", color:"#fff", fontSize:16 }}>
+      Carregando relatórios...
+    </div>
+  );
+
+  return (
+    <div style={{ minHeight:"100vh", background:"#f1f5f9", fontFamily:"'Segoe UI',Arial,sans-serif" }}>
+      {/* Header */}
+      <div style={{ background:"linear-gradient(135deg,#0f172a 0%,#1e3a5f 100%)", color:"#fff", padding:"28px 36px 22px" }}>
+        <h1 style={{ fontSize:28, fontWeight:900, letterSpacing:"-.5px", margin:0 }}>
+          Relatório <span style={{ color:"#60a5fa" }}>Comercial</span>
+        </h1>
+        <div style={{ fontSize:12, color:"#94a3b8", marginTop:5 }}>Acompanhe os indicadores por bimestre</div>
+      </div>
+
+      <div style={{ maxWidth:1100, margin:"0 auto", padding:"28px 28px 48px" }}>
+        {reports.length === 0 ? (
+          <div style={{ textAlign:"center", color:"#64748b", fontSize:15, padding:"64px 0" }}>
+            Nenhum relatório publicado ainda.
+          </div>
+        ) : (
+          <>
+            {/* Year selector */}
+            <div style={{ display:"flex", gap:8, marginBottom:20 }}>
+              {years.map(y => (
+                <button key={y} onClick={() => pickYear(y)}
+                  style={{ padding:"6px 22px", borderRadius:20, border:"none", fontWeight:700, fontSize:15, cursor:"pointer",
+                    background: selYear===y ? "#3b82f6":"#e2e8f0",
+                    color:      selYear===y ? "#fff":"#64748b" }}>
+                  {y}
+                </button>
+              ))}
+            </div>
+
+            {/* Bimester tabs */}
+            <div style={{ display:"flex", gap:8, flexWrap:"wrap", marginBottom:24 }}>
+              {[1,2,3,4,5,6].map(b => {
+                const pub    = yearReports.find(r => r.bimestre === b);
+                const active = selBim === b && !!pub;
+                return (
+                  <button key={b} onClick={() => pub && setSelBim(b)} disabled={!pub}
+                    style={{ display:"flex", alignItems:"center", gap:6, padding:"8px 16px", borderRadius:20,
+                      border:`2px solid ${active?"#3b82f6":pub?"#cbd5e1":"#e2e8f0"}`,
+                      background: active?"#3b82f6":pub?"#fff":"#f8fafc",
+                      color:      active?"#fff":pub?"#334155":"#cbd5e1",
+                      fontWeight:600, fontSize:13, cursor:pub?"pointer":"default", opacity:pub?1:0.45,
+                      transition:"all .15s" }}>
+                    <span style={{ width:8, height:8, borderRadius:"50%", display:"inline-block",
+                      background: active?"#fff":pub?"#22c55e":"#cbd5e1" }} />
+                    {BIM_LABELS[b-1]} bimestre
+                    {pub && (
+                      <span style={{ fontSize:11, color: active?"rgba(255,255,255,.7)":"#94a3b8", marginLeft:2 }}>
+                        {BIM_MONTHS[b-1][0]}-{BIM_MONTHS[b-1][1]}
+                      </span>
+                    )}
+                  </button>
+                );
+              })}
+            </div>
+
+            {/* Download + report */}
+            {selected ? (
+              <>
+                <div style={{ display:"flex", justifyContent:"flex-end", marginBottom:12 }}>
+                  <button onClick={download}
+                    style={{ display:"flex", alignItems:"center", gap:7, padding:"10px 22px",
+                      background:"#0f172a", border:"none", borderRadius:9, color:"#fff",
+                      fontWeight:700, fontSize:13, cursor:"pointer" }}>
+                    ⬇ Baixar Relatório
+                  </button>
+                </div>
+                <div style={{ border:"1px solid #e2e8f0", borderRadius:12, overflow:"hidden", background:"#fff" }}>
+                  <iframe srcDoc={selected.html} title="Relatório Comercial"
+                    style={{ width:"100%", border:"none", display:"block", minHeight:600 }}
+                    onLoad={e => { try { e.target.style.height = e.target.contentDocument.body.scrollHeight + 32 + "px"; } catch {} }} />
+                </div>
+              </>
+            ) : (
+              <div style={{ textAlign:"center", color:"#94a3b8", padding:"48px 0", fontSize:14 }}>
+                Nenhum relatório disponível para este bimestre.
+              </div>
+            )}
+          </>
+        )}
+      </div>
+    </div>
+  );
+}
+
 export default function App() {
-  const [view,     setView]     = useState("login");
+  const [view,     setView]     = useState(() => new URLSearchParams(window.location.search).get("relatorio")==="1" ? "public-report" : "login");
   const [user,     setUser]     = useState(null);
   const [openPage, setOpenPage] = useState(null);
   const [openEmps, setOpenEmps] = useState([]);
@@ -3728,6 +3891,7 @@ export default function App() {
 
   return (
     <ThemeCtx.Provider value={{ t, dark, toggle }}>
+      {view === "public-report" && <PublicReport />}
       {view === "admin"   && <AdminPanel onBack={() => setView("login")} onGestao={goGestao} />}
       {view === "login"   && <LoginScreen onLogin={u=>{setUser(u);setView("home");}} onAdmin={()=>setView("admin")} />}
       {view === "page"    && openPage && <PageDetail page={openPage} initEmployees={openEmps} user={user} onBack={goHome} onLogout={logout} />}

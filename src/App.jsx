@@ -2058,8 +2058,7 @@ function buildReportHtml(monthsArr, vendors, collabs, cfg) {
           {label:"Média de atendimento diário",     fn: mx => { const d=(mx.ind.colab||{})[c.id]||{}; const t=(+d.whatsapp||0)+(+d.tickets||0)+(+d.telefone||0); return d.diasTrab&&+d.diasTrab>0?(t/+d.diasTrab).toFixed(1):""; }},
           {label:"Média de pausas por dia",         fn: mx => { const d=(mx.ind.colab||{})[c.id]||{}; if(!d.pausaTimeTotal||!d.diasTrab||+d.diasTrab===0) return ""; const s=parseTimeToSec(d.pausaTimeTotal); return s>0?secToHHMMSS(Math.round(s/+d.diasTrab)):""; }, noD:true},
         ]);
-        const sepRow = `<tr><td colspan="99" style="padding:6px 0;border:none;background:none"><div style="height:2px;background:#e2e8f0"></div></td></tr>`;
-        return `<div class="vcard"><div class="vcard-hdr"><strong>${fname}</strong></div><div style="padding-top:6px"><table>${colabThead()}<tbody>${pres}${sepRow}${atend}</tbody></table></div></div>`;
+        return `<div class="vcard"><div class="vcard-hdr"><strong>${fname}</strong></div><table>${colabThead()}<tbody>${pres}</tbody></table><div style="height:6px"></div><table>${colabThead()}<tbody>${atend}</tbody></table></div>`;
       }).join("");
     };
     colabSec = `<h2>Atendentes - Renovação</h2>${buildCards(renovCollabs)}<h2>Atendentes - Adm &amp; Financeiro</h2>${buildCards(admCollabs)}`;

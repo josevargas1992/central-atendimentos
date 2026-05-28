@@ -3726,11 +3726,11 @@ function PublicReport() {
 
   const download = () => {
     if (!selected) return;
-    const blob = new Blob([selected.html], { type:"text/html;charset=utf-8" });
-    const a = document.createElement("a");
-    a.href = URL.createObjectURL(blob);
-    a.download = `relatorio-${selYear}-B${selBim}.html`;
-    a.click();
+    const win = window.open("", "_blank");
+    if (!win) { alert("Popup bloqueado — libere popups para este site e tente novamente."); return; }
+    win.document.write(selected.html);
+    win.document.close();
+    setTimeout(() => { try { win.print(); } catch {} }, 600);
   };
 
   if (loading) return (

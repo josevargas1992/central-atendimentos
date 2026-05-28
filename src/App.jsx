@@ -1892,6 +1892,7 @@ function buildReportHtml(monthsArr, vendors, collabs, cfg) {
       ind, met, ren, vnd, inad, leads, renovTot:rT,
       renovReal: rT>0 ? +((+ren.realizadas||0)/rT*100).toFixed(1) : null,
       churnReal: rT>0 ? +((+ren.canceladas||0)/rT*100).toFixed(1) : null,
+      clientesAtivos: +vnd.clientesAtivos||0,
       novasAss: +vnd.novasAss||0,
       novasAssCanceladas: +vnd.novasAssCanceladas||0,
       valorTotalNovas: +vnd.valorTotalNovas||0,
@@ -1968,6 +1969,7 @@ function buildReportHtml(monthsArr, vendors, collabs, cfg) {
   let comSec = "";
   if (sections.comercial) {
     const comRows = [
+      compRow("Clientes ativos",                 mx => mx.clientesAtivos||""),
       compRow("Novas assinaturas",               mx => mx.novasAss||""),
       compRow("Novas assinaturas Canceladas",     mx => mx.novasAssCanceladas||"", true),
       compRow("Valor total em novas assinaturas", mx => mx.valorTotalNovas>0?fmtBRL(mx.valorTotalNovas):""),
@@ -2921,6 +2923,7 @@ function GestaoComercial({ onBack, onLogout }) {
         {indTab === "comercial" && cardGrid(<>
           {card(<>
             {subH("💰 Vendas")}
+            {fld("indicadores.vendas","clientesAtivos","Clientes Ativos")}
             {fld("indicadores.vendas","novasAss","Novas Assinaturas")}
             {fld("indicadores.vendas","novasAssCanceladas","Novas Assinaturas Canceladas")}
             {fldCur("indicadores.vendas","valorTotalNovas","Valor Total em Novas Assinaturas (R$)")}

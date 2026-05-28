@@ -2088,6 +2088,7 @@ ${indSec}${comSec}${atenSec}${vendSec}${colabSec}
 function GestaoComercial({ onBack, onLogout }) {
   const { t, dark, toggle } = useTheme();
   const [curSec,  setCurSec]  = useState("metas");
+  const [navHover, setNavHover] = useState(null);
   const [curMonth,setCurMonth]= useState(gcKey());
   const [availYears,setAvailYears] = useState(() => { const y = new Date().getFullYear(); return [y-1, y]; });
   const [vendors, setVendors] = useState([]);
@@ -3428,15 +3429,24 @@ function GestaoComercial({ onBack, onLogout }) {
 
         {/* Sidebar */}
         <aside style={{ width:205, background:"#1e2d47", display:"flex", flexDirection:"column", flexShrink:0, overflowY:"auto" }}>
-          {SEC_NAV.map(s => (
-            <div key={s.id} onClick={() => setCurSec(s.id)}
-              style={{ display:"flex", alignItems:"center", gap:9, padding:"10px 16px", cursor:"pointer", fontSize:13, transition:"all .15s",
-                borderLeft: curSec===s.id ? "3px solid #60a5fa" : "3px solid transparent",
-                background: curSec===s.id ? "#2d3f55" : "transparent",
-                color: curSec===s.id ? "#60a5fa" : "#94a3b8" }}>
-              <span style={{ fontSize:14, width:17, textAlign:"center" }}>{s.icon}</span>{s.label}
-            </div>
-          ))}
+          {SEC_NAV.map(s => {
+            const active = curSec === s.id;
+            const hovered = navHover === s.id && !active;
+            return (
+              <div key={s.id}
+                onClick={() => setCurSec(s.id)}
+                onMouseEnter={() => setNavHover(s.id)}
+                onMouseLeave={() => setNavHover(null)}
+                style={{ display:"flex", alignItems:"center", gap:9, padding:"10px 16px", cursor:"pointer", fontSize:13,
+                  transition:"background .18s, color .18s, transform .18s, border-color .18s",
+                  borderLeft: active ? "3px solid #60a5fa" : hovered ? "3px solid #3b82f6" : "3px solid transparent",
+                  background: active ? "#2d3f55" : hovered ? "rgba(96,165,250,0.08)" : "transparent",
+                  color: active ? "#60a5fa" : hovered ? "#cbd5e1" : "#94a3b8",
+                  transform: hovered ? "translateX(4px)" : "translateX(0)" }}>
+                <span style={{ fontSize:14, width:17, textAlign:"center", transition:"transform .18s", transform: hovered ? "scale(1.15)" : "scale(1)" }}>{s.icon}</span>{s.label}
+              </div>
+            );
+          })}
         </aside>
 
         {/* Main */}

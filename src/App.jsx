@@ -2119,6 +2119,7 @@ function GestaoComercial({ onBack, onLogout }) {
   const [newVendorComissao, setNewVendorComissao] = useState("");
   const toastRef   = useRef(null);
   const xlsxRef    = useRef(null);
+  const [presenceEmps, setPresenceEmps] = useState([]);
 
   const curYear     = parseInt(curMonth.split("-")[0]);
   const curMonthNum = parseInt(curMonth.split("-")[1]);
@@ -2136,12 +2137,14 @@ function GestaoComercial({ onBack, onLogout }) {
 
   useEffect(() => {
     (async () => {
-      const [vs, cs] = await Promise.all([
+      const [vs, cs, emps] = await Promise.all([
         getDocs(collection(db, "gc_vendors")),
-        getDocs(collection(db, "gc_collabs"))
+        getDocs(collection(db, "gc_collabs")),
+        loadEmployees().catch(() => []),
       ]);
       setVendors(vs.docs.map(d => d.data()).sort((a,b) => a.name.localeCompare(b.name)));
       setCollabs(cs.docs.map(d => d.data()).sort((a,b) => a.name.localeCompare(b.name)));
+      setPresenceEmps(emps);
       setLoading(false);
     })();
   }, []);
@@ -3437,6 +3440,8 @@ function GestaoComercial({ onBack, onLogout }) {
         {/* Main */}
         <div style={{ flex:1, display:"flex", flexDirection:"column", overflow:"hidden" }}>
 
+          {presenceEmps.length > 0 && <div style={{ padding:"6px 18px", flexShrink:0 }}><PresenceBar employees={presenceEmps} /></div>}
+
           {/* Year + Month bar */}
           <div style={{ background:"#1a2535", borderBottom:"1px solid #0f172a", flexShrink:0 }}>
             {/* Year row */}
@@ -3716,7 +3721,7 @@ export default function App() {
       {view === "admin"   && <AdminPanel onBack={() => setView("login")} onGestao={goGestao} />}
       {view === "login"   && <LoginScreen onLogin={u=>{setUser(u);setView("home");}} onAdmin={()=>setView("admin")} />}
       {view === "page"    && openPage && <PageDetail page={openPage} initEmployees={openEmps} user={user} onBack={goHome} onLogout={logout} />}
-      {view === "gestao"  && <GestaoComercial onBack={goHome} onLogout={logout} />}
+      {view === "gestao"  && <GestaoComercial onBack={() => setView("admin")} onLogout={logout} />}
       {view === "home"    && user && <HomeScreen user={user} onOpenPage={goPage} onLogout={logout} onGestao={goGestao} />}
     </ThemeCtx.Provider>
   );

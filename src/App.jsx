@@ -884,7 +884,6 @@ function AdminPanel({ onBack, onGestao }) {
         </div>
         <div style={{ display:"flex", alignItems:"center", gap:14 }}>
           <DarkToggle />
-          <button onClick={onGestao} style={{ background:"rgba(255,255,255,0.07)", border:"1px solid rgba(96,165,250,0.4)", color:"#93c5fd", borderRadius:8, padding:"6px 12px", cursor:"pointer", fontSize:12, fontWeight:600, ...FF }}>📊 Gestão Comercial</button>
           {tab === "planilhas" && <button onClick={()=>setModal({mode:"add",type:"page"})} style={{ padding:"8px 18px", background:"linear-gradient(135deg,#0ea5e9,#6366f1)", border:"none", borderRadius:9, color:"#fff", fontWeight:700, fontSize:14, cursor:"pointer", ...FF }}>+ Nova Planilha</button>}
           {tab === "atendentes" && <button onClick={()=>setModal({mode:"add",type:"emp"})}  style={{ padding:"8px 18px", background:"linear-gradient(135deg,#0ea5e9,#6366f1)", border:"none", borderRadius:9, color:"#fff", fontWeight:700, fontSize:14, cursor:"pointer", ...FF }}>+ Novo Atendente</button>}
           {tab === "tipos"         && <button onClick={()=>setModal({mode:"add",type:"tipo"})} style={{ padding:"8px 18px", background:"linear-gradient(135deg,#0ea5e9,#6366f1)", border:"none", borderRadius:9, color:"#fff", fontWeight:700, fontSize:14, cursor:"pointer", ...FF }}>+ Novo Tipo</button>}
@@ -897,6 +896,7 @@ function AdminPanel({ onBack, onGestao }) {
         {tabBtn("atendentes",    "👥  Atendentes")}
         {tabBtn("tipos",         "🏷️  Tipos")}
         {tabBtn("departamentos", "🏢  Departamentos")}
+        <button onClick={onGestao} style={{ padding:"10px 22px", border:"none", borderRadius:10, fontWeight:700, fontSize:14, cursor:"pointer", ...FF, background:"transparent", color:"#60a5fa", transition:"all 0.15s" }}>📊  Gestão</button>
         <span style={{ marginLeft:"auto", fontSize:12, color:t.textMuted }}>
           {tab==="planilhas"     && `${pages.length} planilha${pages.length!==1?"s":""}`}
           {tab==="atendentes"    && `${employees.length} atendente${employees.length!==1?"s":""}`}
@@ -1967,7 +1967,7 @@ function buildReportHtml(monthsArr, vendors, collabs, cfg) {
   if (sections.comercial) {
     const comRows = [
       compRow("Novas assinaturas",               mx => mx.novasAss||""),
-      compRow("Novas assinaturas Canceladas",     mx => mx.novasAssCanceladas||""),
+      compRow("Novas assinaturas Canceladas",     mx => mx.novasAssCanceladas||"", true),
       compRow("Valor total em novas assinaturas", mx => mx.valorTotalNovas>0?fmtBRL(mx.valorTotalNovas):""),
       compRow("Ticket médio Total",               mx => mx.ticketMedio?fmtBRL(mx.ticketMedio):""),
     ].join("");
@@ -1980,14 +1980,14 @@ function buildReportHtml(monthsArr, vendors, collabs, cfg) {
       compRow("Geradas",     mx => mx.ren.geradas||""),
       compRow("Totais",      mx => mx.renovTot||""),
       compRow("Pagas",       mx => mx.ren.realizadas||""),
-      compRow("Canceladas",  mx => mx.ren.canceladas||""),
-      compRow("Desativadas", mx => mx.ren.desativadas||""),
+      compRow("Canceladas",  mx => mx.ren.canceladas||"", true),
+      compRow("Desativadas", mx => mx.ren.desativadas||"", true),
     ].join("");
     const inadRows = [
-      compRow("Total",         mx => mx.inad.totais||""),
+      compRow("Total",         mx => mx.inad.totais||"", true),
       compRow("Regularizados", mx => mx.inad.regularizadas||""),
-      compRow("Em Aberto",     mx => mx.inad.emAberto||""),
-      compRow("Cancelamentos", mx => mx.inad.canceladas||""),
+      compRow("Em Aberto",     mx => mx.inad.emAberto||"", true),
+      compRow("Cancelamentos", mx => mx.inad.canceladas||"", true),
     ].join("");
     comSec = `<h2>Comercial</h2><div class="tblwrap"><table>${thead("Indicadores")}<tbody>${comRows}</tbody></table></div><h2>Leads Trabalhados</h2><div class="tblwrap"><table>${thead("Indicadores")}<tbody>${leadsRows}</tbody></table></div><h2>Renovação</h2><div class="tblwrap"><table>${thead("Indicadores")}<tbody>${renovRows}</tbody></table></div><h2>Inadimplentes</h2><div class="tblwrap"><table>${thead("Indicadores")}<tbody>${inadRows}</tbody></table></div>`;
   }

@@ -474,10 +474,25 @@ function RecordRow({ r, employees, tiposMap, togglePrio, togglePesquisa, updateS
 
 // ──────────────────────────────────────────────────────────────────────
 
-const CHANGELOG_VERSION = "1.4.0";
+const CHANGELOG_VERSION = "1.5.0";
 const CHANGELOG_KEY = `changelog_seen_${CHANGELOG_VERSION}`;
 
 const CHANGELOG = [
+  {
+    version: "1.5.0",
+    date: "Out 2026",
+    entries: [
+      { type: "novo",     text: "Filtro de status \"Não resolvidos\" — mostra juntos os atendimentos Em atendimento e Pendentes." },
+      { type: "melhoria", text: "Filtro de canal agora inclui Telegram e considera também a 2ª via do atendimento." },
+      { type: "melhoria", text: "A busca também procura no contato da 2ª via." },
+      { type: "melhoria", text: "Dois atendentes registrando ao mesmo tempo não sobrescrevem mais o atendimento um do outro." },
+      { type: "melhoria", text: "Se a conexão falhar ao registrar um atendimento, o sistema avisa e mantém os dados digitados no formulário." },
+      { type: "melhoria", text: "Satisfação (admin): o teste da API Lógike mostra o motivo real de falhas e a importação exibe um resumo dos comentários obtidos." },
+      { type: "correcao", text: "Quando os dados não carregam, aparece um aviso com opção de tentar novamente, em vez de uma lista vazia." },
+      { type: "correcao", text: "Busca não trava mais com atendimentos antigos sem descrição ou contato." },
+      { type: "correcao", text: "O ponto de \"Novidades\" na planilha só aparece quando há novidades ainda não vistas." },
+    ],
+  },
   {
     version: "1.4.0",
     date: "Out 2025",

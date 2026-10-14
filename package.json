@@ -9,7 +9,7 @@
     "preview": "vite preview",
     "backup": "node scripts/backup-firestore.mjs",
     "restore": "node scripts/restore-firestore.mjs",
-    "backup:drive": "node scripts/backup-firestore.mjs --out=\"G:/Meu Drive/Backups/Central de Atendimentos\""
+    "backup:drive": "node scripts/backup-firestore.mjs --out=\"G:/Meu Drive/Backups/Central de Atendimentos\" --with-code"
   },
   "dependencies": {
     "firebase": "^12.13.0",

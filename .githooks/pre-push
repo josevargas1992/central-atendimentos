@@ -1,5 +1,5 @@
 #!/bin/sh
-# Antes de qualquer push (deploy), salva um backup completo do Firestore no Google Drive.
+# Antes de qualquer push (deploy), salva no Google Drive um backup completo do Firestore + código (git bundle).
 # Se o backup falhar, o push é cancelado — nenhum deploy sai sem backup.
 echo "▶ Backup do Firestore antes do push para '$1'..."
 if ! npm run --silent backup:drive; then

@@ -3,6 +3,7 @@ import { collection, doc, getDocs, getDoc, setDoc, deleteDoc, writeBatch, query,
 import { db, isSafeMode } from "./firebase";
 import * as store from "./data";
 import { consultarLogike, descreverTesteLogike } from "./logike";
+import { satNorm, satParseData, satAgruparPorMes, satDistribuir } from "./satisfacao";
 import * as XLSX from "xlsx";
 
 // ── Constants ─────────────────────────────────────────────────────────
@@ -474,10 +475,21 @@ function RecordRow({ r, employees, tiposMap, togglePrio, togglePesquisa, updateS
 
 // ──────────────────────────────────────────────────────────────────────
 
-const CHANGELOG_VERSION = "1.5.0";
+const CHANGELOG_VERSION = "1.5.1";
 const CHANGELOG_KEY = `changelog_seen_${CHANGELOG_VERSION}`;
 
 const CHANGELOG = [
+  {
+    version: "1.5.1",
+    date: "Out 2026",
+    entries: [
+      { type: "melhoria", text: "Satisfação: um único arquivo Excel pode ter vários meses — cada avaliação vai automaticamente para o mês da sua data." },
+      { type: "melhoria", text: "Satisfação: importar o mesmo arquivo de novo não duplica avaliações." },
+      { type: "correcao", text: "Satisfação: avaliações feitas no fim da noite do último dia do mês não são mais contadas no mês seguinte." },
+      { type: "novo",     text: "Botão ⭐ Satisfação dentro da planilha — veja seus indicadores sem sair do atendimento." },
+      { type: "melhoria", text: "A janela de Novidades agora também fecha com a tecla ESC." },
+    ],
+  },
   {
     version: "1.5.0",
     date: "Out 2026",
@@ -541,6 +553,13 @@ function ChangelogModal({ onClose, onDismiss }) {
     if (noShow) { try { localStorage.setItem(CHANGELOG_KEY, "1"); } catch {} onDismiss?.(); }
     onClose();
   }
+
+  // ESC fecha do mesmo jeito que o X (respeitando "Não mostrar novamente")
+  useEffect(() => {
+    const onKey = e => { if (e.key === "Escape") handleClose(); };
+    document.addEventListener("keydown", onKey);
+    return () => document.removeEventListener("keydown", onKey);
+  }, [noShow]);
 
   return (
     <Overlay>
@@ -758,10 +777,6 @@ async function loadSatImportacoes() {
   } catch { return []; }
 }
 
-async function saveSatImportacao(key, data) {
-  await setDoc(doc(db, "satisfacao", key), data);
-}
-
 async function deleteSatImportacao(mes, ano) {
   await deleteDoc(doc(db, "satisfacao", `${ano}-${String(mes).padStart(2, "0")}`));
 }
@@ -791,12 +806,6 @@ async function saveSatApiConfig(data) {
 
 // ── Satisfação — parsing utilities ───────────────────────────────────
 
-function satNorm(s) {
-  return String(s || "").toLowerCase()
-    .normalize("NFD").replace(/[̀-ͯ]/g, "")
-    .replace(/[^a-z0-9 ]/g, " ").replace(/\s+/g, " ").trim();
-}
-
 function satDetectCol(headers, keywords) {
   const normH = headers.map(satNorm);
   // Iterate keywords first (priority order) so a specific keyword wins
@@ -819,18 +828,6 @@ function satParseScore(v) {
   if (s in SAT_SCORE_MAP) return SAT_SCORE_MAP[s];
   const n = parseFloat(String(v));
   if (!isNaN(n) && n >= 1 && n <= 5) return Math.round(n);
-  return null;
-}
-
-function satParseData(v) {
-  if (!v) return null;
-  if (v instanceof Date) return v.toISOString().slice(0, 10);
-  const s = String(v).trim();
-  if (!s || s === "-") return null;
-  const m = s.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})$/);
-  if (m) return `${m[3]}-${m[2].padStart(2, "0")}-${m[1].padStart(2, "0")}`;
-  const d = new Date(s);
-  if (!isNaN(d.getTime())) return d.toISOString().slice(0, 10);
   return null;
 }
 
@@ -1398,6 +1395,7 @@ function SatisfacaoAdminTab({ employees }) {
   const [enrichProgress,    setEnrichProgress]    = useState(null); // null | { total, done }
   const [enrichResumo,      setEnrichResumo]      = useState(null); // null | { total, ok, semTexto, falhas, motivo }
   const [apiTesteMsg,       setApiTesteMsg]       = useState("");
+  const [importResumo,      setImportResumo]      = useState(null); // null | [{ key, adicionados, atualizados, novo }]
   const fileRef = useRef();
 
   const MN = ["Janeiro","Fevereiro","Março","Abril","Maio","Junho","Julho","Agosto","Setembro","Outubro","Novembro","Dezembro"];
@@ -1422,7 +1420,8 @@ function SatisfacaoAdminTab({ employees }) {
     const reader = new FileReader();
     reader.onload = e => {
       try {
-        const wb  = XLSX.read(e.target.result, { type: "array", cellDates: true });
+        // cellDates:false — datas chegam como número de série e são lidas sem fuso (ver satParseData)
+        const wb  = XLSX.read(e.target.result, { type: "array", cellDates: false });
         const ws  = wb.Sheets[wb.SheetNames[0]];
         const raw = XLSX.utils.sheet_to_json(ws, { header: 1, defval: "" });
         if (raw.length < 2) { setErro("Planilha vazia ou sem dados."); setFase("erro"); return; }
@@ -1532,15 +1531,14 @@ function SatisfacaoAdminTab({ employees }) {
           motivo: ultimaFalha ? descreverTesteLogike(ultimaFalha).msg : null });
       }
 
-      const totalResp  = registros.filter(r => r.temResposta).length;
-      await saveSatImportacao(key, {
-        key, mes: mesMes, ano: mesAno, arquivoNome,
-        importadoEm: new Date().toISOString(),
-        totalRegistros: registros.length,
-        totalRespondidos: totalResp,
-        totalSemResposta: registros.length - totalResp,
-        registros,
-      });
+      // ── Distribui por mês (data de cada linha; sem data → mês selecionado) e junta
+      //    com o que já existe, sem duplicar. Leitura direta: se falhar, nada é gravado.
+      const atuais = (await getDocs(collection(db, "satisfacao"))).docs.map(d => d.data());
+      const { docs, resumo } = satDistribuir(atuais, registros, key, arquivoNome);
+      const batch = writeBatch(db);
+      for (const [k, d] of Object.entries(docs)) batch.set(doc(db, "satisfacao", k), d);
+      await batch.commit();
+      setImportResumo(resumo);
       setImportacoes(await loadSatImportacoes());
       setFase("concluido");
     } catch (err) {
@@ -1552,7 +1550,7 @@ function SatisfacaoAdminTab({ employees }) {
     }
   };
 
-  const resetar = () => { setFase("idle"); setArquivoNome(""); setParsedData(null); setMapeamentosLocais({}); setErro(""); setEnrichResumo(null); };
+  const resetar = () => { setFase("idle"); setArquivoNome(""); setParsedData(null); setMapeamentosLocais({}); setErro(""); setEnrichResumo(null); setImportResumo(null); };
 
   if (carregando) return <div style={{ textAlign:"center", padding:60, color:t.textMuted }}>Carregando...</div>;
 
@@ -1725,7 +1723,7 @@ function SatisfacaoAdminTab({ employees }) {
             </div>
             {existeImportacao && (
               <div style={{ padding:"8px 14px", background:"#fef3c7", border:"1px solid #fde68a", borderRadius:8, fontSize:12, color:"#92400e", fontWeight:600, alignSelf:"flex-end" }}>
-                ⚠️ Já importado — será substituído
+                ⚠️ Já importado — registros novos serão somados, sem duplicar
               </div>
             )}
           </div>
@@ -1739,6 +1737,7 @@ function SatisfacaoAdminTab({ employees }) {
             <div style={{ fontSize:38, marginBottom:10 }}>📂</div>
             <div style={{ fontWeight:600, fontSize:15, color:t.text, marginBottom:6 }}>Clique para selecionar ou arraste o arquivo aqui</div>
             <div style={{ fontSize:12, color:t.textMuted }}>Arquivos .xlsx ou .xls — a primeira linha deve ser o cabeçalho</div>
+            <div style={{ fontSize:12, color:t.textMuted, marginTop:4 }}>O arquivo pode ter vários meses: cada registro vai para o mês da sua data. Registros sem data vão para o mês selecionado acima.</div>
             <input ref={fileRef} type="file" accept=".xlsx,.xls" style={{ display:"none" }} onChange={e => { if(e.target.files[0]) handleFile(e.target.files[0]); e.target.value=""; }} />
           </div>
 
@@ -1751,11 +1750,14 @@ function SatisfacaoAdminTab({ employees }) {
       {fase === "preview" && parsedData && (() => {
         const totalResp = parsedData.rows.filter(r => r.temResposta).length;
         const totalSem  = parsedData.rows.length - totalResp;
+        const porMes    = satAgruparPorMes(parsedData.rows, `${mesAno}-${String(mesMes).padStart(2, "0")}`);
+        const meses     = Object.keys(porMes).sort();
+        const rotuloMes = k => `${MN[+k.slice(5) - 1]} ${k.slice(0, 4)}`;
         return (
           <div style={{ background:t.card, border:`1px solid ${t.border}`, borderRadius:16, padding:28 }}>
             <div style={{ display:"flex", justifyContent:"space-between", alignItems:"flex-start", marginBottom:20, flexWrap:"wrap", gap:12 }}>
               <div>
-                <h4 style={{ margin:0, fontWeight:700, fontSize:15, color:t.text }}>Pré-visualização — {MN[mesMes-1]} {mesAno}</h4>
+                <h4 style={{ margin:0, fontWeight:700, fontSize:15, color:t.text }}>Pré-visualização — {meses.length === 1 ? rotuloMes(meses[0]) : `${meses.length} meses`}</h4>
                 <p style={{ margin:"3px 0 0", fontSize:12, color:t.textMuted }}>{arquivoNome}</p>
               </div>
               <div style={{ display:"flex", gap:16 }}>
@@ -1765,6 +1767,20 @@ function SatisfacaoAdminTab({ employees }) {
                     <div style={{ fontSize:11, color:t.textMuted }}>{l}</div>
                   </div>
                 ))}
+              </div>
+            </div>
+
+            <div style={{ marginBottom:20 }}>
+              <div style={{ fontSize:11, fontWeight:600, color:t.textMuted, marginBottom:8, textTransform:"uppercase", letterSpacing:"0.05em" }}>Meses identificados</div>
+              <div style={{ display:"flex", flexWrap:"wrap", gap:6 }}>
+                {meses.map(k => {
+                  const existe = importacoes.some(i => i.key === k);
+                  return (
+                    <span key={k} style={{ padding:"3px 10px", background:t.btnSecBg, border:`1px solid ${t.border}`, borderRadius:20, fontSize:12, color:t.text }}>
+                      {rotuloMes(k)} · {porMes[k].length} registro(s) <span style={{ color:t.textMuted }}>{existe ? "— já existe, será atualizado" : "— novo"}</span>
+                    </span>
+                  );
+                })}
               </div>
             </div>
 
@@ -1814,7 +1830,7 @@ function SatisfacaoAdminTab({ employees }) {
                 {enrichProgress
                   ? `Buscando comentários… ${enrichProgress.done}/${enrichProgress.total}`
                   : confirmando ? "Salvando..."
-                  : existeImportacao ? "Substituir e Salvar" : "Confirmar Importação"}
+                  : "Confirmar Importação"}
               </button>
             </div>
             {apiConfig?.apiKey && (() => {
@@ -1834,8 +1850,17 @@ function SatisfacaoAdminTab({ employees }) {
           <div style={{ fontSize:52, marginBottom:12 }}>✅</div>
           <h4 style={{ margin:"0 0 8px", fontWeight:700, fontSize:18, color:t.text }}>Importação concluída!</h4>
           <p style={{ color:t.textMuted, fontSize:14, margin:"0 0 24px" }}>
-            {MN[mesMes-1]} {mesAno} — {parsedData?.rows.length} registros · {parsedData?.rows.filter(r=>r.temResposta).length} respondidos
+            {parsedData?.rows.length} registros · {parsedData?.rows.filter(r=>r.temResposta).length} respondidos
           </p>
+          {importResumo && (
+            <div style={{ maxWidth:520, margin:"-8px auto 24px", display:"flex", flexDirection:"column", gap:4, fontSize:13, color:t.text }}>
+              {importResumo.map(m => (
+                <div key={m.key}>
+                  <b>{MN[+m.key.slice(5) - 1]} {m.key.slice(0, 4)}</b>{m.novo ? " (novo)" : ""} — {m.adicionados} adicionado(s){m.atualizados ? `, ${m.atualizados} já existente(s) atualizado(s)` : ""}
+                </div>
+              ))}
+            </div>
+          )}
           {enrichResumo && (
             <div style={{ maxWidth:520, margin:"-8px auto 24px", padding:"12px 16px", borderRadius:10, fontSize:13, lineHeight:1.6, textAlign:"left",
               background: enrichResumo.falhas ? (dark?"rgba(245,158,11,0.1)":"#fffbeb") : (dark?"rgba(34,197,94,0.1)":"#f0fdf4"),
@@ -2918,7 +2943,7 @@ function HomeScreen({ user, onOpenPage, onLogout, onGestao, onPonto, onSatisfaca
 
 // ── Page Detail ───────────────────────────────────────────────────────
 
-function PageDetail({ page, initEmployees, user, onBack, onLogout }) {
+function PageDetail({ page, initEmployees, user, onBack, onLogout, onSatisfacao }) {
   const { t } = useTheme();
   const [employees, setEmployees] = useState(initEmployees || []);
   const [records,   setRecords]   = useState([]);
@@ -3039,6 +3064,7 @@ function PageDetail({ page, initEmployees, user, onBack, onLogout }) {
           </div>
         </div>
         <div style={{ display:"flex", alignItems:"center", gap:14 }}>
+          <button onClick={onSatisfacao} style={{ background:"rgba(255,255,255,0.07)", border:"1px solid rgba(251,191,36,0.4)", color:"#fde68a", borderRadius:8, padding:"6px 12px", cursor:"pointer", fontSize:12, fontWeight:600, ...FF }}>⭐ Satisfação</button>
           <button onClick={()=>setChangelog(true)}
             style={{ position:"relative", background:"rgba(255,255,255,0.07)", border:"1px solid rgba(255,255,255,0.12)", color:"#cbd5e1", borderRadius:8, padding:"6px 12px", cursor:"pointer", fontSize:12, fontWeight:500, display:"flex", alignItems:"center", gap:7, ...FF }}
             onMouseEnter={e=>e.currentTarget.style.background="rgba(255,255,255,0.12)"}
@@ -5847,7 +5873,9 @@ export default function App() {
   }, [user?.id]);
   const goHome       = () => { setOpenPage(null); setView("home"); };
   const goPonto      = () => setView("ponto");
-  const goSatisfacao = () => setView("satisfacao");
+  // Satisfação pode ser aberta pela tela inicial ou pela planilha; "Voltar" retorna para a origem.
+  const [satFrom, setSatFrom] = useState("home");
+  const goSatisfacao = (from = "home") => { setSatFrom(from); setView("satisfacao"); };
   const goPage       = (pg, emps) => { setOpenPage(pg); setOpenEmps(emps||[]); setView("page"); };
   const goGestao     = () => setView("gestao");
 
@@ -5856,11 +5884,11 @@ export default function App() {
       {view === "public-report" && <PublicReport />}
       {view === "admin"   && <AdminPanel onBack={() => setView("login")} onGestao={goGestao} />}
       {view === "login"   && <LoginScreen onLogin={u=>{setUser(u);setView("home");}} onAdmin={()=>setView("admin")} />}
-      {view === "page"    && openPage && <PageDetail page={openPage} initEmployees={openEmps} user={user} onBack={goHome} onLogout={logout} />}
+      {view === "page"    && openPage && <PageDetail page={openPage} initEmployees={openEmps} user={user} onBack={goHome} onLogout={logout} onSatisfacao={() => goSatisfacao("page")} />}
       {view === "gestao"  && <GestaoComercial onBack={() => setView("admin")} onLogout={logout} />}
-      {view === "home"        && user && <HomeScreen user={user} onOpenPage={goPage} onLogout={logout} onGestao={goGestao} onPonto={goPonto} onSatisfacao={goSatisfacao} />}
+      {view === "home"        && user && <HomeScreen user={user} onOpenPage={goPage} onLogout={logout} onGestao={goGestao} onPonto={goPonto} onSatisfacao={() => goSatisfacao("home")} />}
       {view === "ponto"       && user && <PontoDigital user={user} onBack={goHome} />}
-      {view === "satisfacao"  && user && <SatisfacaoView user={user} onBack={goHome} />}
+      {view === "satisfacao"  && user && <SatisfacaoView user={user} onBack={satFrom === "page" && openPage ? () => setView("page") : goHome} />}
       {isSafeMode && (
         <div style={{ position:"fixed", left:0, right:0, bottom:0, zIndex:99999, background:"repeating-linear-gradient(135deg,#f59e0b 0 14px,#d97706 14px 28px)", color:"#1c1917", textAlign:"center", padding:"6px 12px", fontSize:12.5, fontWeight:800, letterSpacing:0.3, boxShadow:"0 -2px 10px rgba(0,0,0,0.3)", pointerEvents:"none", ...FF }}>
           🧪 MODO SEGURO — banco de TESTE (cópia do backup de {import.meta.env.VITE_SAFE_BACKUP_LABEL || "?"}). Nada aqui afeta os dados reais.

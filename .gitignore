@@ -10,3 +10,7 @@ dist-ssr
 
 # Backups do Firestore (contêm dados sensíveis — nunca versionar)
 backups/
+
+# Logs do emulador do Firebase
+firestore-debug.log
+*-debug.log

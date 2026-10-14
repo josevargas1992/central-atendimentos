@@ -1,6 +1,8 @@
 ﻿import { useState, useEffect, useRef, createContext, useContext } from "react";
 import { collection, doc, getDocs, getDoc, setDoc, deleteDoc, writeBatch, query, where, onSnapshot } from "firebase/firestore";
-import { db } from "./firebase";
+import { db, isSafeMode } from "./firebase";
+import * as store from "./data";
+import { consultarLogike, descreverTesteLogike } from "./logike";
 import * as XLSX from "xlsx";
 
 // ── Constants ─────────────────────────────────────────────────────────
@@ -617,6 +619,19 @@ function Field({ label, children }) {
   return <div style={{ marginBottom:16 }}><label style={{ display:"block", fontSize:11.5, fontWeight:600, color:t.textMuted, marginBottom:6, userSelect:"none" }}>{label}</label>{children}</div>;
 }
 
+// Mostrado quando os dados não puderam ser carregados — evita exibir (e salvar por cima) dados incompletos.
+function LoadErrorBox() {
+  const { t } = useTheme();
+  return (
+    <div style={{ textAlign:"center", padding:"56px 24px", background:t.card, borderRadius:18, border:"1px solid #fecaca", ...FF }}>
+      <div style={{ fontSize:44, marginBottom:12 }}>⚠️</div>
+      <div style={{ fontSize:17, fontWeight:700, color:t.text, marginBottom:6 }}>Não foi possível carregar os dados</div>
+      <div style={{ fontSize:13.5, color:t.textMuted, marginBottom:20 }}>Verifique sua conexão com a internet. Nenhum dado foi alterado.</div>
+      <button onClick={()=>window.location.reload()} style={{ padding:"10px 24px", background:"#6366f1", border:"none", borderRadius:10, color:"#fff", fontWeight:700, fontSize:14, cursor:"pointer", ...FF }}>Tentar novamente</button>
+    </div>
+  );
+}
+
 function Toast({ msg }) {
   if (!msg) return null;
   return <div style={{ position:"fixed", bottom:28, left:"50%", transform:"translateX(-50%)", background:"#1e293b", color:"#f1f5f9", padding:"10px 18px", borderRadius:10, fontSize:13.5, fontWeight:500, boxShadow:"0 8px 32px rgba(0,0,0,0.35)", zIndex:3000, whiteSpace:"nowrap", border:"1px solid #334155", display:"flex", alignItems:"center", gap:8, ...FF }}>{msg}</div>;
@@ -644,43 +659,20 @@ function ConfirmDialog({ message, onConfirm, onCancel }) {
 
 // ── Storage helpers (Firestore) ───────────────────────────────────────
 
-async function getCol(colName) {
-  const snap = await getDocs(collection(db, colName));
-  return snap.docs.map(d => d.data());
-}
-
-async function syncCol(colName, list, idKey = "id") {
-  const snap = await getDocs(collection(db, colName));
-  const batch = writeBatch(db);
-  const kept = new Set(list.map(x => String(x[idKey])));
-  snap.docs.forEach(d => { if (!kept.has(d.id)) batch.delete(d.ref); });
-  list.forEach(x => batch.set(doc(db, colName, String(x[idKey])), x));
-  await batch.commit();
-}
+// Regras de segurança das leituras e gravações: ver src/data.js
+const loadOrSeed = (colName, seed) => store.loadOrSeed(db, colName, seed);
+const saveItem   = (colName, item) => store.saveItem(db, colName, item);
+const deleteItem = (colName, id)   => store.deleteItem(db, colName, id);
 
 async function loadEmployees() {
-  try {
-    const data = await getCol("employees");
-    if (data.length) return data;
-    await syncCol("employees", DEFAULT_EMPLOYEES);
-    return DEFAULT_EMPLOYEES;
-  } catch { return DEFAULT_EMPLOYEES; }
+  return await loadOrSeed("employees", b => DEFAULT_EMPLOYEES.forEach(x => b.set(doc(db, "employees", x.id), x))) ?? DEFAULT_EMPLOYEES;
 }
 
 async function loadPages() {
-  try {
-    const data = await getCol("pages");
-    if (data.length) return data;
-    const batch = writeBatch(db);
-    batch.set(doc(db, "pages", SEED_PAGE.id), SEED_PAGE);
-    SEED_RECORDS.forEach(r => batch.set(doc(db, "records", `${SEED_PAGE.id}-${r.id}`), { ...r, pageId: SEED_PAGE.id }));
-    await batch.commit();
-    return [SEED_PAGE];
-  } catch { return [SEED_PAGE]; }
-}
-
-async function savePages(list) {
-  try { await syncCol("pages", list); } catch {}
+  return await loadOrSeed("pages", b => {
+    b.set(doc(db, "pages", SEED_PAGE.id), SEED_PAGE);
+    SEED_RECORDS.forEach(r => b.set(doc(db, "records", `${SEED_PAGE.id}-${r.id}`), { ...r, pageId: SEED_PAGE.id }));
+  }) ?? [SEED_PAGE];
 }
 
 async function loadRecords(pageId) {
@@ -702,29 +694,11 @@ async function deletePageRecords(pageId) {
 }
 
 async function loadTipos() {
-  try {
-    const data = await getCol("tipos");
-    if (data.length) return data;
-    await syncCol("tipos", DEFAULT_TIPOS);
-    return DEFAULT_TIPOS;
-  } catch { return DEFAULT_TIPOS; }
-}
-
-async function saveTipos(list) {
-  try { await syncCol("tipos", list); } catch {}
+  return await loadOrSeed("tipos", b => DEFAULT_TIPOS.forEach(x => b.set(doc(db, "tipos", x.id), x))) ?? DEFAULT_TIPOS;
 }
 
 async function loadDepartments() {
-  try {
-    const data = await getCol("departments");
-    if (data.length) return data;
-    await syncCol("departments", DEFAULT_DEPARTMENTS);
-    return DEFAULT_DEPARTMENTS;
-  } catch { return DEFAULT_DEPARTMENTS; }
-}
-
-async function saveDepartments(list) {
-  try { await syncCol("departments", list); } catch {}
+  return await loadOrSeed("departments", b => DEFAULT_DEPARTMENTS.forEach(x => b.set(doc(db, "departments", x.id), x))) ?? DEFAULT_DEPARTMENTS;
 }
 
 // ── Signature Functions ───────────────────────────────────────────────
@@ -799,27 +773,6 @@ async function saveSatApiConfig(data) {
   try { await setDoc(doc(db, "satisfacao_config", "api"), data); } catch {}
 }
 
-// Busca o comentário de uma pesquisa pelo protocolo via API configurada.
-// Tenta os campos mais comuns na resposta JSON; ajuste quando tiver a doc da API.
-async function fetchComentarioLogike(protocolo, cfg) {
-  if (!cfg?.apiKey || !cfg?.baseUrl || !protocolo) return null;
-  try {
-    const endpoint = (cfg.endpoint || "/{protocolo}")
-      .replace("{protocolo}", encodeURIComponent(String(protocolo).trim()));
-    const url = cfg.baseUrl.replace(/\/$/, "") + endpoint;
-    const res = await fetch(url, {
-      headers: {
-        "Authorization": `Bearer ${cfg.apiKey}`,
-        "X-Api-Key": cfg.apiKey,
-        "Accept": "application/json",
-      },
-    });
-    if (!res.ok) return null;
-    const json = await res.json();
-    return json.comentario ?? json.comment ?? json.texto ?? json.observacao
-        ?? json.feedback  ?? json.resposta ?? json.message ?? null;
-  } catch { return null; }
-}
 
 // ── Satisfação — parsing utilities ───────────────────────────────────
 
@@ -1428,6 +1381,8 @@ function SatisfacaoAdminTab({ employees }) {
   const [apiTeste,          setApiTeste]          = useState(null); // null | "ok" | "erro" | "testando"
   const [showApiConfig,     setShowApiConfig]     = useState(false);
   const [enrichProgress,    setEnrichProgress]    = useState(null); // null | { total, done }
+  const [enrichResumo,      setEnrichResumo]      = useState(null); // null | { total, ok, semTexto, falhas, motivo }
+  const [apiTesteMsg,       setApiTesteMsg]       = useState("");
   const fileRef = useRef();
 
   const MN = ["Janeiro","Fevereiro","Março","Abril","Maio","Junho","Julho","Agosto","Setembro","Outubro","Novembro","Dezembro"];
@@ -1540,20 +1495,26 @@ function SatisfacaoAdminTab({ employees }) {
       let registros = parsedData.rows.map(r => ({ ...r, employeeId: finalMap[r.nomeExcel] || null }));
 
       // ── Enriquecimento via API (busca comentários pelos protocolos) ──────
-      const comApi = apiConfig?.apiKey && apiConfig?.baseUrl
-        ? registros.filter(r => r.temComentarioApi && r.protocolo)
+      // Cada protocolo é consultado uma vez; o texto vai para todas as linhas com ele.
+      const protocolos = apiConfig?.apiKey && apiConfig?.baseUrl
+        ? [...new Set(registros.filter(r => r.temComentarioApi && r.protocolo).map(r => r.protocolo))]
         : [];
-      if (comApi.length > 0) {
-        setEnrichProgress({ total: comApi.length, done: 0 });
-        for (let i = 0; i < comApi.length; i++) {
-          const texto = await fetchComentarioLogike(comApi[i].protocolo, apiConfig);
-          if (texto) {
-            const idx = registros.findIndex(x => x.protocolo === comApi[i].protocolo);
-            if (idx >= 0) registros[idx] = { ...registros[idx], comentario: texto };
-          }
-          setEnrichProgress({ total: comApi.length, done: i + 1 });
+      setEnrichResumo(null);
+      if (protocolos.length > 0) {
+        const textos = {};
+        let falhas = 0, semTexto = 0, ultimaFalha = null;
+        setEnrichProgress({ total: protocolos.length, done: 0 });
+        for (let i = 0; i < protocolos.length; i++) {
+          const r = await consultarLogike(protocolos[i], apiConfig);
+          if (r.ok && r.texto) textos[protocolos[i]] = r.texto;
+          else if (r.ok) semTexto++;
+          else { falhas++; ultimaFalha = r; }
+          setEnrichProgress({ total: protocolos.length, done: i + 1 });
         }
+        registros = registros.map(x => textos[x.protocolo] ? { ...x, comentario: textos[x.protocolo] } : x);
         setEnrichProgress(null);
+        setEnrichResumo({ total: protocolos.length, ok: Object.keys(textos).length, semTexto, falhas,
+          motivo: ultimaFalha ? descreverTesteLogike(ultimaFalha).msg : null });
       }
 
       const totalResp  = registros.filter(r => r.temResposta).length;
@@ -1576,7 +1537,7 @@ function SatisfacaoAdminTab({ employees }) {
     }
   };
 
-  const resetar = () => { setFase("idle"); setArquivoNome(""); setParsedData(null); setMapeamentosLocais({}); setErro(""); };
+  const resetar = () => { setFase("idle"); setArquivoNome(""); setParsedData(null); setMapeamentosLocais({}); setErro(""); setEnrichResumo(null); };
 
   if (carregando) return <div style={{ textAlign:"center", padding:60, color:t.textMuted }}>Carregando...</div>;
 
@@ -1655,24 +1616,29 @@ function SatisfacaoAdminTab({ employees }) {
                 onClick={async () => {
                   setApiTeste("testando");
                   const cfg = { baseUrl: apiLocal.baseUrl.trim(), apiKey: apiLocal.apiKey.trim(), endpoint: apiLocal.endpoint.trim() || "/{protocolo}" };
-                  const r = await fetchComentarioLogike("TESTE", cfg);
-                  // Uma resposta qualquer (mesmo null) indica que a conexão chegou ao servidor
-                  // Um erro de rede (throw) indica falha
-                  setApiTeste("ok"); // Se chegou aqui, conexão funcionou (404 é normal para "TESTE")
+                  const d = descreverTesteLogike(await consultarLogike("TESTE", cfg));
+                  setApiTeste(d.ok ? "ok" : "erro");
+                  setApiTesteMsg(d.msg);
                 }}
                 disabled={apiTeste === "testando" || !apiLocal.baseUrl || !apiLocal.apiKey}
                 style={{ padding:"8px 18px", background:t.btnSecBg, border:`1px solid ${t.border}`, borderRadius:8, color:t.btnSecText, fontWeight:600, fontSize:13, cursor:"pointer", opacity:(!apiLocal.baseUrl||!apiLocal.apiKey)?0.5:1, ...FF }}>
                 {apiTeste === "testando" ? "Testando..." : "Testar conexão"}
               </button>
-              {apiTeste === "ok"  && <span style={{ fontSize:12, color:"#22c55e", fontWeight:600 }}>✓ Conexão estabelecida</span>}
-              {apiTeste === "erro" && <span style={{ fontSize:12, color:"#ef4444", fontWeight:600 }}>✗ Falha na conexão</span>}
               {apiConfig?.apiKey && (
-                <button onClick={async () => { await saveSatApiConfig({}); setApiConfig({}); setApiLocal({ baseUrl:"", apiKey:"", endpoint:"/{protocolo}" }); setApiTeste(null); }}
+                <button onClick={async () => { await saveSatApiConfig({}); setApiConfig({}); setApiLocal({ baseUrl:"", apiKey:"", endpoint:"/{protocolo}" }); setApiTeste(null); setApiTesteMsg(""); }}
                   style={{ marginLeft:"auto", padding:"8px 14px", background:"#fef2f2", border:"1px solid #fecaca", borderRadius:8, color:"#dc2626", fontWeight:600, fontSize:12, cursor:"pointer", ...FF }}>
                   Remover API
                 </button>
               )}
             </div>
+            {apiTesteMsg && apiTeste !== "testando" && (
+              <div style={{ marginTop:12, padding:"10px 14px", borderRadius:8, fontSize:12.5, lineHeight:1.5, fontWeight:500,
+                background: apiTeste === "ok" ? (dark?"rgba(34,197,94,0.1)":"#f0fdf4") : (dark?"rgba(239,68,68,0.1)":"#fef2f2"),
+                border: `1px solid ${apiTeste === "ok" ? "#86efac" : "#fecaca"}`,
+                color: apiTeste === "ok" ? (dark?"#86efac":"#166534") : (dark?"#fca5a5":"#b91c1c") }}>
+                {apiTesteMsg}
+              </div>
+            )}
           </div>
         )}
       </div>
@@ -1739,7 +1705,7 @@ function SatisfacaoAdminTab({ employees }) {
               <label style={{ display:"block", fontSize:11, fontWeight:600, color:t.textMuted, marginBottom:5, textTransform:"uppercase", letterSpacing:"0.05em" }}>Ano</label>
               <select value={mesAno} onChange={e => setMesAno(+e.target.value)}
                 style={{ padding:"8px 12px", background:t.inputBg, border:`1px solid ${t.border}`, borderRadius:8, color:t.text, fontSize:14, cursor:"pointer", ...FF }}>
-                {[2024, 2025, 2026, 2027].map(y => <option key={y} value={y}>{y}</option>)}
+                {Array.from({ length: new Date().getFullYear() - 2024 + 2 }, (_, i) => 2024 + i).map(y => <option key={y} value={y}>{y}</option>)}
               </select>
             </div>
             {existeImportacao && (
@@ -1837,10 +1803,10 @@ function SatisfacaoAdminTab({ employees }) {
               </button>
             </div>
             {apiConfig?.apiKey && (() => {
-              const comCount = parsedData.rows.filter(r => r.temComentarioApi && r.protocolo).length;
+              const comCount = new Set(parsedData.rows.filter(r => r.temComentarioApi && r.protocolo).map(r => r.protocolo)).size;
               return comCount > 0 ? (
                 <p style={{ margin:"10px 0 0", fontSize:12, color:t.textMuted, textAlign:"right" }}>
-                  🔌 {comCount} comentário(s) serão buscados via API Lógike durante a importação
+                  🔌 Comentários de {comCount} protocolo(s) serão buscados via API Lógike durante a importação
                 </p>
               ) : null;
             })()}
@@ -1855,6 +1821,16 @@ function SatisfacaoAdminTab({ employees }) {
           <p style={{ color:t.textMuted, fontSize:14, margin:"0 0 24px" }}>
             {MN[mesMes-1]} {mesAno} — {parsedData?.rows.length} registros · {parsedData?.rows.filter(r=>r.temResposta).length} respondidos
           </p>
+          {enrichResumo && (
+            <div style={{ maxWidth:520, margin:"-8px auto 24px", padding:"12px 16px", borderRadius:10, fontSize:13, lineHeight:1.6, textAlign:"left",
+              background: enrichResumo.falhas ? (dark?"rgba(245,158,11,0.1)":"#fffbeb") : (dark?"rgba(34,197,94,0.1)":"#f0fdf4"),
+              border: `1px solid ${enrichResumo.falhas ? "#fde68a" : "#86efac"}`, color:t.text }}>
+              <div style={{ fontWeight:700, marginBottom:4 }}>🔌 Comentários via API Lógike</div>
+              <div>{enrichResumo.ok} de {enrichResumo.total} protocolo(s) com comentário obtido.</div>
+              {enrichResumo.semTexto > 0 && <div>{enrichResumo.semTexto} respondido(s) pela API sem texto de comentário.</div>}
+              {enrichResumo.falhas > 0 && <div style={{ color:dark?"#fbbf24":"#b45309", fontWeight:600 }}>⚠️ {enrichResumo.falhas} consulta(s) falharam. {enrichResumo.motivo}</div>}
+            </div>
+          )}
           <button onClick={resetar}
             style={{ padding:"10px 24px", background:"#6366f1", border:"none", borderRadius:9, color:"#fff", fontWeight:700, fontSize:14, cursor:"pointer", ...FF }}>
             Nova Importação
@@ -1876,6 +1852,7 @@ function AdminPanel({ onBack, onGestao }) {
   const [tipos,        setTipos]        = useState([]);
   const [departments,  setDepartments]  = useState([]);
   const [loading,      setLoading]      = useState(true);
+  const [loadError,    setLoadError]    = useState(false);
   const [modal,       setModal]       = useState(null);
   const [confirmId,   setConfirmId]   = useState(null);
   const [confirmType, setConfirmType] = useState(null);
@@ -1889,8 +1866,15 @@ function AdminPanel({ onBack, onGestao }) {
 
   useEffect(() => {
     (async () => {
-      const [emps, pgs, tps, depts, allSigs] = await Promise.all([loadEmployees(), loadPages(), loadTipos(), loadDepartments(), loadAllSignatures()]);
-      const sorted = [...pgs].sort((a,b)=>b.year!==a.year?b.year-a.year:b.month-a.month);
+      let emps, pgs, tps, depts, allSigs;
+      try {
+        [emps, pgs, tps, depts, allSigs] = await Promise.all([loadEmployees(), loadPages(), loadTipos(), loadDepartments(), loadAllSignatures()]);
+      } catch (e) {
+        console.error("AdminPanel: falha ao carregar dados", e);
+        setLoadError(true); setLoading(false);
+        return;
+      }
+      const sorted = sortPages(pgs);
       setEmployees(emps); setPages(sorted); setTipos(tps); setDepartments(depts);
       const { carimbo: car, ...restSigs } = allSigs;
       setSigs(restSigs); setCarimboDB(car || null); setSigsLoaded(true);
@@ -1906,15 +1890,18 @@ function AdminPanel({ onBack, onGestao }) {
     })();
   }, []);
 
-  const persistPages = async list => {
-    const sorted = [...list].sort((a,b)=>b.year!==a.year?b.year-a.year:b.month-a.month);
-    setPages(sorted); await savePages(sorted);
+  function sortPages(list) { return [...list].sort((a,b)=>b.year!==a.year?b.year-a.year:b.month-a.month); }
+
+  // Grava um único documento no Firestore; a tela só muda se a gravação der certo.
+  const persist = async op => {
+    try { await op(); return true; }
+    catch (e) { console.error(e); showToast("❌  Erro ao salvar — nada foi alterado. Verifique a conexão."); return false; }
   };
 
   const savePage = async pg => {
     const isEdit = modal.mode === "edit";
-    const updated = isEdit ? pages.map(p=>p.id===pg.id?pg:p) : [...pages, pg];
-    await persistPages(updated);
+    if (!await persist(() => saveItem("pages", pg))) return;
+    setPages(sortPages(isEdit ? pages.map(p=>p.id===pg.id?pg:p) : [...pages, pg]));
     if (!isEdit) setCounts(c=>({...c,[pg.id]:{total:0,resolved:0,inProgress:0,opAbertos:0}}));
     showToast(isEdit ? "✓  Planilha atualizada." : "✓  Planilha criada.");
     setModal(null);
@@ -1922,64 +1909,58 @@ function AdminPanel({ onBack, onGestao }) {
 
   const deletePage = async () => {
     const pg = pages.find(p=>p.id===confirmId);
-    await persistPages(pages.filter(p=>p.id!==confirmId));
+    if (!await persist(() => deleteItem("pages", confirmId))) return;
     await deletePageRecords(confirmId);
+    setPages(pages.filter(p=>p.id!==confirmId));
     showToast("🗑️  Planilha \"" + (pg?.name||"") + "\" excluída.");
     setConfirmId(null); setConfirmType(null);
   };
 
-  const persistEmployees = async list => { setEmployees(list); try { await syncCol("employees", list); } catch {}; };
-
-  const persistTipos = async list => { setTipos(list); await saveTipos(list); };
-
-  const persistDepartments = async list => { setDepartments(list); await saveDepartments(list); };
-
   const saveDeptFn = async dept => {
     const isEdit = modal.mode === "edit";
-    const updated = isEdit ? departments.map(d=>d.id===dept.id?dept:d) : [...departments, dept];
-    await persistDepartments(updated);
+    if (!await persist(() => saveItem("departments", dept))) return;
+    setDepartments(isEdit ? departments.map(d=>d.id===dept.id?dept:d) : [...departments, dept]);
     showToast(isEdit ? `✓  "${dept.name}" atualizado.` : `✓  "${dept.name}" criado.`);
     setModal(null);
   };
 
   const deleteDept = async () => {
     const dept = departments.find(d=>d.id===confirmId);
-    await persistDepartments(departments.filter(d=>d.id!==confirmId));
+    if (!await persist(() => deleteItem("departments", confirmId))) return;
+    setDepartments(departments.filter(d=>d.id!==confirmId));
     showToast(`🗑️  "${dept?.name||"Departamento"}" removido.`);
     setConfirmId(null); setConfirmType(null);
   };
 
   const saveTipoFn = async tp => {
     const isEdit = modal.mode === "edit";
-    const updated = isEdit ? tipos.map(x=>x.id===tp.id?tp:x) : [...tipos, tp];
-    await persistTipos(updated);
+    if (!await persist(() => saveItem("tipos", tp))) return;
+    setTipos(isEdit ? tipos.map(x=>x.id===tp.id?tp:x) : [...tipos, tp]);
     showToast(isEdit ? `✓  Tipo "${tp.label}" atualizado.` : `✓  Tipo "${tp.label}" criado.`);
     setModal(null);
   };
 
   const deleteTipo = async () => {
     const tp = tipos.find(x=>x.id===confirmId);
-    await persistTipos(tipos.filter(x=>x.id!==confirmId));
+    if (!await persist(() => deleteItem("tipos", confirmId))) return;
+    setTipos(tipos.filter(x=>x.id!==confirmId));
     showToast(`🗑️  Tipo "${tp?.label||""}" removido.`);
     setConfirmId(null); setConfirmType(null);
   };
 
   const saveEmployee = async emp => {
     const isEdit = modal.mode === "edit";
-    let updated;
-    if (isEdit) { updated = employees.map(e=>e.id===emp.id?emp:e); }
-    else {
-      if (employees.find(e=>e.id===emp.id)) emp.id = emp.id+"-"+Date.now();
-      updated = [...employees, emp];
-    }
-    await persistEmployees(updated);
+    if (!isEdit && employees.find(e=>e.id===emp.id)) emp.id = emp.id+"-"+Date.now();
+    if (!await persist(() => saveItem("employees", emp))) return;
+    setEmployees(isEdit ? employees.map(e=>e.id===emp.id?emp:e) : [...employees, emp]);
     showToast(isEdit ? `✓  ${emp.name} atualizado.` : `✓  ${emp.name} cadastrado.`);
     setModal(null);
   };
 
   const deleteEmployee = async () => {
     const emp = employees.find(e=>e.id===confirmId);
-    await persistEmployees(employees.filter(e=>e.id!==confirmId));
+    if (!await persist(() => deleteItem("employees", confirmId))) return;
+    setEmployees(employees.filter(e=>e.id!==confirmId));
     showToast("🗑️  " + (emp?.name||"Atendente") + " removido.");
     setConfirmId(null); setConfirmType(null);
   };
@@ -2008,10 +1989,10 @@ function AdminPanel({ onBack, onGestao }) {
         </div>
         <div style={{ display:"flex", alignItems:"center", gap:14 }}>
           <DarkToggle />
-          {tab === "planilhas" && <button onClick={()=>setModal({mode:"add",type:"page"})} style={{ padding:"8px 16px", background:"#6366f1", border:"none", borderRadius:8, color:"#fff", fontWeight:600, fontSize:13.5, cursor:"pointer", ...FF }}>Nova Planilha</button>}
-          {tab === "atendentes" && <button onClick={()=>setModal({mode:"add",type:"emp"})}  style={{ padding:"8px 16px", background:"#6366f1", border:"none", borderRadius:8, color:"#fff", fontWeight:600, fontSize:13.5, cursor:"pointer", ...FF }}>Novo Atendente</button>}
-          {tab === "tipos"         && <button onClick={()=>setModal({mode:"add",type:"tipo"})} style={{ padding:"8px 16px", background:"#6366f1", border:"none", borderRadius:8, color:"#fff", fontWeight:600, fontSize:13.5, cursor:"pointer", ...FF }}>Novo Tipo</button>}
-          {tab === "departamentos" && <button onClick={()=>setModal({mode:"add",type:"dept"})} style={{ padding:"8px 16px", background:"#6366f1", border:"none", borderRadius:8, color:"#fff", fontWeight:600, fontSize:13.5, cursor:"pointer", ...FF }}>Novo Departamento</button>}
+          {!loading && !loadError && tab === "planilhas" && <button onClick={()=>setModal({mode:"add",type:"page"})} style={{ padding:"8px 16px", background:"#6366f1", border:"none", borderRadius:8, color:"#fff", fontWeight:600, fontSize:13.5, cursor:"pointer", ...FF }}>Nova Planilha</button>}
+          {!loading && !loadError && tab === "atendentes" && <button onClick={()=>setModal({mode:"add",type:"emp"})}  style={{ padding:"8px 16px", background:"#6366f1", border:"none", borderRadius:8, color:"#fff", fontWeight:600, fontSize:13.5, cursor:"pointer", ...FF }}>Novo Atendente</button>}
+          {!loading && !loadError && tab === "tipos"         && <button onClick={()=>setModal({mode:"add",type:"tipo"})} style={{ padding:"8px 16px", background:"#6366f1", border:"none", borderRadius:8, color:"#fff", fontWeight:600, fontSize:13.5, cursor:"pointer", ...FF }}>Novo Tipo</button>}
+          {!loading && !loadError && tab === "departamentos" && <button onClick={()=>setModal({mode:"add",type:"dept"})} style={{ padding:"8px 16px", background:"#6366f1", border:"none", borderRadius:8, color:"#fff", fontWeight:600, fontSize:13.5, cursor:"pointer", ...FF }}>Novo Departamento</button>}
         </div>
       </div>
 
@@ -2033,7 +2014,7 @@ function AdminPanel({ onBack, onGestao }) {
 
       <div style={{ padding:24 }}>
         <PresenceBar employees={employees} />
-        {loading ? <div style={{ textAlign:"center", padding:80, color:t.textMuted }}>Carregando...</div> : (
+        {loadError ? <LoadErrorBox /> : loading ? <div style={{ textAlign:"center", padding:80, color:t.textMuted }}>Carregando...</div> : (
 
           tab === "planilhas" ? (
             pages.length === 0 ? (
@@ -2826,6 +2807,7 @@ function HomeScreen({ user, onOpenPage, onLogout, onGestao, onPonto, onSatisfaca
   const [pages,     setPages]     = useState([]);
   const [counts,    setCounts]    = useState({});
   const [loading,   setLoading]   = useState(true);
+  const [loadError, setLoadError] = useState(false);
   const [changelog, setChangelog] = useState(() => {
     try { return localStorage.getItem(CHANGELOG_KEY) !== "1"; } catch { return true; }
   });
@@ -2835,7 +2817,9 @@ function HomeScreen({ user, onOpenPage, onLogout, onGestao, onPonto, onSatisfaca
 
   useEffect(() => {
     (async () => {
-      const [emps, pgs, tps] = await Promise.all([loadEmployees(), loadPages(), loadTipos()]);
+      let emps, pgs, tps;
+      try { [emps, pgs, tps] = await Promise.all([loadEmployees(), loadPages(), loadTipos()]); }
+      catch (e) { console.error("HomeScreen: falha ao carregar dados", e); setLoadError(true); setLoading(false); return; }
       const sorted = [...pgs]
         .filter(p => p.responsibleId === user.id)
         .sort((a,b)=>b.year!==a.year?b.year-a.year:b.month-a.month);
@@ -2892,11 +2876,11 @@ function HomeScreen({ user, onOpenPage, onLogout, onGestao, onPonto, onSatisfaca
         <div style={{ marginBottom:22 }}>
           <h2 style={{ margin:0, fontSize:20, fontWeight:800, color:t.text }}>Planilhas de Atendimento</h2>
           <p style={{ margin:"5px 0 0", fontSize:13, color:t.textMuted }}>
-            {loading ? "Carregando..." : pages.length === 0 ? "Nenhuma planilha atribuída ao seu usuário ainda." : `${pages.length} planilha${pages.length!==1?"s":""} disponíve${pages.length!==1?"is":"l"} — clique para abrir`}
+            {loadError ? "" : loading ? "Carregando..." : pages.length === 0 ? "Nenhuma planilha atribuída ao seu usuário ainda." : `${pages.length} planilha${pages.length!==1?"s":""} disponíve${pages.length!==1?"is":"l"} — clique para abrir`}
           </p>
         </div>
 
-        {loading ? (
+        {loadError ? <LoadErrorBox /> : loading ? (
           <div style={{ textAlign:"center", padding:80, color:t.textMuted }}>Carregando planilhas...</div>
         ) : pages.length === 0 ? (
           <div style={{ textAlign:"center", padding:80, background:t.card, borderRadius:18, border:`1px dashed ${t.border}` }}>
@@ -2925,6 +2909,7 @@ function PageDetail({ page, initEmployees, user, onBack, onLogout }) {
   const [records,   setRecords]   = useState([]);
   const [tipos,     setTipos]     = useState([]);
   const [loading,   setLoading]   = useState(true);
+  const [loadError, setLoadError] = useState(false);
   const [modal,       setModal]       = useState(null);
   const [confirmId,   setConfirmId]   = useState(null);
   const [satPopup,    setSatPopup]    = useState(false);
@@ -2932,6 +2917,7 @@ function PageDetail({ page, initEmployees, user, onBack, onLogout }) {
   const [alertRecord, setAlertRecord] = useState(null);
   const [tipoEdit,    setTipoEdit]    = useState(null);
   const [changelog,   setChangelog]   = useState(false);
+  const [seen,        setSeen]        = useState(() => { try { return localStorage.getItem(CHANGELOG_KEY) === "1"; } catch { return false; } });
   const alertedIds = useRef(new Set());
   const FKEY = `atend_filters_${page.id}`;
   const [filters, setFilters] = useState(() => {
@@ -2944,18 +2930,32 @@ function PageDetail({ page, initEmployees, user, onBack, onLogout }) {
   useEffect(() => {
     let unsub;
     (async () => {
-      const [emps, tps] = await Promise.all([loadEmployees(), loadTipos()]);
-      setEmployees(emps); setTipos(tps);
+      try {
+        const [emps, tps] = await Promise.all([loadEmployees(), loadTipos()]);
+        setEmployees(emps); setTipos(tps);
+      } catch (e) {
+        console.error("PageDetail: falha ao carregar dados", e);
+        setLoadError(true); setLoading(false);
+        return;
+      }
       const q = query(collection(db, "records"), where("pageId", "==", page.id));
       unsub = onSnapshot(q, snap => {
         setRecords(snap.docs.map(d => d.data()).sort((a, b) => a.id - b.id));
         setLoading(false);
-      });
+      }, e => { console.error("PageDetail: falha ao ouvir registros", e); setLoadError(true); setLoading(false); });
     })();
     return () => unsub?.();
   }, [page.id]);
 
-  const addRecord  = async f => { const id = records.length ? Math.max(...records.map(r=>r.id))+1 : 1; await setDoc(doc(db,"records",`${page.id}-${id}`), {...f, id, pageId:page.id}); setModal(null); };
+  const addRecord  = async f => {
+    try {
+      await store.createRecord(db, page.id, f, records.length ? Math.max(...records.map(r=>r.id))+1 : 1);
+      setModal(null);
+    } catch (e) {
+      console.error("addRecord", e);
+      window.alert("Não foi possível registrar o atendimento. Verifique a conexão e tente novamente — os dados digitados continuam no formulário.");
+    }
+  };
   const editRecord = async f => { await setDoc(doc(db,"records",`${page.id}-${f.id}`), {...f, pageId:page.id}); setModal(null); };
   const delRecord  = async () => { await deleteDoc(doc(db,"records",`${page.id}-${confirmId}`)); setConfirmId(null); };
   const togglePrio      = async id => { const r = records.find(x=>x.id===id); if(r) await setDoc(doc(db,"records",`${page.id}-${id}`), {...r, prioridade:!r.prioridade}); };
@@ -2985,10 +2985,11 @@ function PageDetail({ page, initEmployees, user, onBack, onLogout }) {
   }, [records]);
 
   const filtered = records.filter(r => {
-    if (filters.search && ![r.cliente,r.descricao,r.contato].some(s=>s.toLowerCase().includes(filters.search.toLowerCase()))) return false;
-    if (filters.status    !== "Todos" && r.status      !== filters.status)    return false;
+    if (filters.search && ![r.cliente,r.descricao,r.contato,r.contato2].some(s=>String(s??"").toLowerCase().includes(filters.search.toLowerCase()))) return false;
+    if (filters.status === "Não resolvidos") { if (r.status === "Resolvido") return false; }
+    else if (filters.status !== "Todos" && r.status !== filters.status) return false;
     if (filters.tipo      !== "Todos" && r.tipo        !== filters.tipo)      return false;
-    if (filters.via       !== "Todos" && r.via         !== filters.via)       return false;
+    if (filters.via       !== "Todos" && r.via !== filters.via && r.via2 !== filters.via) return false;
     if (filters.atendente !== "Todos" && r.atendenteId !== filters.atendente) return false;
     return true;
   });
@@ -3031,7 +3032,7 @@ function PageDetail({ page, initEmployees, user, onBack, onLogout }) {
               <polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/>
             </svg>
             Novidades
-            <span style={{ position:"absolute", top:-4, right:-4, width:8, height:8, borderRadius:"50%", background:"#818cf8", border:"2px solid #0f172a" }} />
+            {!seen && <span style={{ position:"absolute", top:-4, right:-4, width:8, height:8, borderRadius:"50%", background:"#818cf8", border:"2px solid #0f172a" }} />}
           </button>
           <DarkToggle />
           <div style={{ display:"flex", alignItems:"center", gap:8 }}>
@@ -3067,12 +3068,12 @@ function PageDetail({ page, initEmployees, user, onBack, onLogout }) {
 
         <div style={{ background:t.card, borderRadius:14, border:`1px solid ${t.border}`, padding:"13px 18px", marginBottom:14, display:"flex", gap:10, alignItems:"center", flexWrap:"wrap", position:"sticky", top:58, zIndex:10 }}>
           <input value={filters.search} onChange={e=>setF("search")(e.target.value)} placeholder="🔍  Buscar cliente, descrição ou contato..." style={{ flex:1, minWidth:190, padding:"8px 14px", border:`1.5px solid ${t.inputBorder}`, borderRadius:9, fontSize:13, color:t.inputText, outline:"none", background:t.inputBg, ...FF }} />
-          <select value={filters.status}    onChange={e=>setF("status")(e.target.value)}    style={selSt}><option>Todos</option><option>Em atendimento</option><option>Resolvido</option><option>Pendente</option></select>
+          <select value={filters.status}    onChange={e=>setF("status")(e.target.value)}    style={selSt}><option>Todos</option><option>Não resolvidos</option><option>Em atendimento</option><option>Resolvido</option><option>Pendente</option></select>
           <select value={filters.tipo} onChange={e=>setF("tipo")(e.target.value)} style={selSt}>
             <option value="Todos">Todos os tipos</option>
             {tipos.filter(tp=>tp.department===page.department||tp.department==="Geral").map(tp=><option key={tp.id} value={tp.label}>{tp.label}</option>)}
           </select>
-          <select value={filters.via}       onChange={e=>setF("via")(e.target.value)}       style={selSt}><option>Todos</option><option>Ticket</option><option>WhatsApp</option><option>Telefone</option></select>
+          <select value={filters.via}       onChange={e=>setF("via")(e.target.value)}       style={selSt}><option>Todos</option><option>Ticket</option><option>WhatsApp</option><option>Telefone</option><option>Telegram</option></select>
           <select value={filters.atendente} onChange={e=>setF("atendente")(e.target.value)} style={selSt}>
             <option value="Todos">Todos atendentes</option>
             {employees.map(e=><option key={e.id} value={e.id}>{e.name}</option>)}
@@ -3083,7 +3084,7 @@ function PageDetail({ page, initEmployees, user, onBack, onLogout }) {
         </div>
 
         <div style={{ background:t.card, borderRadius:14, border:`1px solid ${t.border}`, overflow:"hidden" }}>
-          {loading ? (
+          {loadError ? <LoadErrorBox /> : loading ? (
             <div style={{ padding:60, textAlign:"center", color:t.textMuted }}>Carregando registros...</div>
           ) : filtered.length === 0 ? (
             <div style={{ padding:60, textAlign:"center" }}>
@@ -3120,7 +3121,7 @@ function PageDetail({ page, initEmployees, user, onBack, onLogout }) {
       {confirmId!==null && <ConfirmDialog message="Este registro será excluído permanentemente." onConfirm={delRecord} onCancel={()=>setConfirmId(null)} />}
       {agendaModal && <AgendaModal record={agendaModal} onSave={saveAgenda} onClose={()=>setAgendaModal(null)} />}
       {tipoEdit    && <TipoColorPanel tipos={tipos} department={page.department} initialTipo={tipoEdit} onSave={tp=>{ saveTipoColor(tp); setTipoEdit(null); }} onClose={()=>setTipoEdit(null)} />}
-      {changelog   && <ChangelogModal onClose={()=>setChangelog(false)} onDismiss={()=>{}} />}
+      {changelog   && <ChangelogModal onClose={()=>setChangelog(false)} onDismiss={()=>setSeen(true)} />}
       {alertRecord && (
         <Overlay z={1200}>
           <div style={{ background:"#fff", borderRadius:20, padding:"28px 32px", maxWidth:400, width:"90%", boxShadow:"0 20px 50px rgba(0,0,0,0.3)", ...FF }}>
@@ -3170,7 +3171,9 @@ function LoginScreen({ onLogin, onAdmin }) {
   const [admPw,       setAdmPw]       = useState("");
   const [admErr,      setAdmErr]      = useState("");
 
-  useEffect(() => { loadEmployees().then(e=>{setEmployees(e);setLoading(false);}).catch(()=>setLoading(false)); }, []);
+  const [loadError,   setLoadError]   = useState(false);
+
+  useEffect(() => { loadEmployees().then(e=>{setEmployees(e);setLoading(false);}).catch(e=>{console.error(e);setLoadError(true);setLoading(false);}); }, []);
 
   const attempt = () => {
     if (!selected) return;
@@ -3201,6 +3204,18 @@ function LoginScreen({ onLogin, onAdmin }) {
         </div>
 
         {loading ? <div style={{ textAlign:"center", color:t.loginSub, padding:40 }}>Carregando...</div>
+
+        : loadError && !showAdmForm ? (
+          <>
+            <LoadErrorBox />
+            <div style={{ textAlign:"center", marginTop:24 }}>
+              <button onClick={()=>{setShowAdmForm(true);setAdmErr("");setAdmPw("");}}
+                style={{ background:t.loginAdmBg, border:t.loginAdmBorder, color:t.loginAdmText, cursor:"pointer", fontSize:12.5, ...FF, padding:"7px 16px", borderRadius:8 }}>
+                ⚙️ Área do Administrador
+              </button>
+            </div>
+          </>
+        )
 
         : !selected && !showAdmForm ? (
           <>
@@ -5831,6 +5846,11 @@ export default function App() {
       {view === "home"        && user && <HomeScreen user={user} onOpenPage={goPage} onLogout={logout} onGestao={goGestao} onPonto={goPonto} onSatisfacao={goSatisfacao} />}
       {view === "ponto"       && user && <PontoDigital user={user} onBack={goHome} />}
       {view === "satisfacao"  && user && <SatisfacaoView user={user} onBack={goHome} />}
+      {isSafeMode && (
+        <div style={{ position:"fixed", left:0, right:0, bottom:0, zIndex:99999, background:"repeating-linear-gradient(135deg,#f59e0b 0 14px,#d97706 14px 28px)", color:"#1c1917", textAlign:"center", padding:"6px 12px", fontSize:12.5, fontWeight:800, letterSpacing:0.3, boxShadow:"0 -2px 10px rgba(0,0,0,0.3)", pointerEvents:"none", ...FF }}>
+          🧪 MODO SEGURO — banco de TESTE (cópia do backup de {import.meta.env.VITE_SAFE_BACKUP_LABEL || "?"}). Nada aqui afeta os dados reais.
+        </div>
+      )}
     </ThemeCtx.Provider>
   );
 }

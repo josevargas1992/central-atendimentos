@@ -5,3 +5,8 @@ dist-ssr
 .env
 .env.local
 .env.*.local
+
+.vercel
+
+# Backups do Firestore (contêm dados sensíveis — nunca versionar)
+backups/

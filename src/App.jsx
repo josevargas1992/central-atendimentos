@@ -22,9 +22,9 @@ const MONTHS_SHORT = ["jan.","fev.","mar.","abr.","mai.","jun.","jul.","ago.","s
 const DEPARTMENTS = ["Suporte ao Cliente","Financeiro","Jurídico","Comercial","Recuperação","Treinamento","Geral","Outro"];
 
 const STATUS_CFG = {
-  "Em atendimento": { bg:"#fef3c7", text:"#92400e", dot:"#f59e0b" },
-  "Resolvido":      { bg:"#dcfce7", text:"#166534", dot:"#22c55e" },
-  "Pendente":       { bg:"#fee2e2", text:"#991b1b", dot:"#f87171" },
+  "Em atendimento": { bar:"#f59e0b", dot:"#f59e0b", bg:"#fef3c7", text:"#b45309", darkBg:"rgba(245,158,11,0.14)", darkText:"#fbbf24", darkBorder:"rgba(245,158,11,0.25)" },
+  "Resolvido":      { bar:"#22c55e", dot:"#22c55e", bg:"#dcfce7", text:"#15803d", darkBg:"rgba(34,197,94,0.12)",  darkText:"#4ade80", darkBorder:"rgba(34,197,94,0.22)"   },
+  "Pendente":       { bar:"#ef4444", dot:"#f87171", bg:"#fee2e2", text:"#b91c1c", darkBg:"rgba(239,68,68,0.14)", darkText:"#f87171", darkBorder:"rgba(239,68,68,0.25)"  },
 };
 const TIPO_CFG = {
   "Transferido": { bg:"#dbeafe", text:"#1e40af" },
@@ -226,6 +226,11 @@ const SEED_RECORDS = [
 
 const FF = { fontFamily:"'Segoe UI', system-ui, sans-serif" };
 
+// Shared style helpers
+const INP = (t) => ({ width:"100%", padding:"10px 12px", border:`1.5px solid ${t.inputBorder}`, borderRadius:8, fontSize:14, color:t.inputText, outline:"none", boxSizing:"border-box", background:t.inputBg, transition:"border-color 0.15s, box-shadow 0.15s", ...FF });
+const SEL = (t) => ({ ...INP(t), cursor:"pointer" });
+const BTN_SEC = (t) => ({ padding:"10px 18px", background:t.btnSecBg, border:`1px solid ${t.border}`, borderRadius:8, color:t.btnSecText, fontWeight:600, fontSize:14, cursor:"pointer", ...FF });
+
 function DarkToggle() {
   const { dark, toggle } = useTheme();
   return (
@@ -247,20 +252,341 @@ function Avatar({ name, color, size=40 }) {
 }
 
 function StatusBadge({ status }) {
-  const c = STATUS_CFG[status] || { bg:"#f1f5f9", text:"#475569", dot:"#94a3b8" };
-  return <span style={{ display:"inline-flex", alignItems:"center", gap:5, background:c.bg, color:c.text, padding:"4px 10px 4px 7px", borderRadius:20, fontSize:11.5, fontWeight:600, whiteSpace:"nowrap" }}><span style={{ width:7, height:7, borderRadius:"50%", background:c.dot, flexShrink:0 }} />{status}</span>;
+  const { dark } = useTheme();
+  const c = STATUS_CFG[status] || { bg:"#f1f5f9", text:"#475569", dot:"#94a3b8", darkBg:"rgba(148,163,184,0.1)", darkText:"#94a3b8", darkBorder:"transparent" };
+  const bg  = dark ? c.darkBg    : c.bg;
+  const clr = dark ? c.darkText  : c.text;
+  const dot = dark ? c.darkText  : c.dot;
+  const brd = dark ? c.darkBorder : "transparent";
+  return <span style={{ display:"inline-flex", alignItems:"center", gap:5, background:bg, color:clr, border:`1px solid ${brd}`, padding:"3px 10px 3px 7px", borderRadius:20, fontSize:11.5, fontWeight:600, whiteSpace:"nowrap" }}><span style={{ width:6, height:6, borderRadius:"50%", background:dot, flexShrink:0 }} />{status}</span>;
 }
 function TipoBadge({ tipo, tipoObj, onClick }) {
   const c = tipoObj || TIPO_CFG[tipo] || { bg:"#f1f5f9", text:"#475569" };
-  return <span onClick={onClick} style={{ background:c.bg, color:c.text, padding:"3px 9px", borderRadius:20, fontSize:11, fontWeight:600, whiteSpace:"nowrap", display:"inline-block", cursor:onClick?"pointer":"default" }}>{tipo}</span>;
+  return <span onClick={onClick} style={{ background:c.bg, color:c.text, padding:"3px 10px", borderRadius:20, fontSize:11, fontWeight:600, whiteSpace:"nowrap", display:"inline-block", cursor:onClick?"pointer":"default", letterSpacing:0.1 }}>{tipo}</span>;
 }
 function ViaBadge({ via }) {
-  const map = { Ticket:["🎫","#6366f1"], WhatsApp:["💬","#22c55e"], Telefone:["📞","#0ea5e9"], Telegram:["✈️","#229ED9"] };
-  const [icon, color] = map[via] || ["📋","#64748b"];
-  return <span style={{ display:"inline-flex", alignItems:"center", gap:5, fontSize:12.5, color, fontWeight:500 }}><span>{icon}</span>{via}</span>;
+  const emailSvg = <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><rect x="2" y="4" width="20" height="16" rx="3"/><path d="M2 7l10 7 10-7"/></svg>;
+  const waSvg    = <svg width="11" height="11" viewBox="0 0 24 24" fill="currentColor"><path d="M17.472 14.382c-.297-.149-1.758-.867-2.03-.967-.273-.099-.471-.148-.67.15-.197.297-.767.966-.94 1.164-.173.199-.347.223-.644.075-.297-.15-1.255-.463-2.39-1.475-.883-.788-1.48-1.761-1.653-2.059-.173-.297-.018-.458.13-.606.134-.133.298-.347.446-.52.149-.174.198-.298.298-.497.099-.198.05-.371-.025-.52-.075-.149-.669-1.612-.916-2.207-.242-.579-.487-.5-.669-.51-.173-.008-.371-.01-.57-.01-.198 0-.52.074-.792.372-.272.297-1.04 1.016-1.04 2.479 0 1.462 1.065 2.875 1.213 3.074.149.198 2.096 3.2 5.077 4.487.709.306 1.262.489 1.694.625.712.227 1.36.195 1.871.118.571-.085 1.758-.719 2.006-1.413.248-.694.248-1.289.173-1.413-.074-.124-.272-.198-.57-.347m-5.421 7.403h-.004a9.87 9.87 0 0 1-5.031-1.378l-.361-.214-3.741.982.998-3.648-.235-.374a9.86 9.86 0 0 1-1.51-5.26c.001-5.45 4.436-9.884 9.888-9.884 2.64 0 5.122 1.03 6.988 2.898a9.825 9.825 0 0 1 2.893 6.994c-.003 5.45-4.437 9.884-9.885 9.884m8.413-18.297A11.815 11.815 0 0 0 12.05 0C5.495 0 .16 5.335.157 11.892c0 2.096.547 4.142 1.588 5.945L.057 24l6.305-1.654a11.882 11.882 0 0 0 5.683 1.448h.005c6.554 0 11.89-5.335 11.893-11.893a11.821 11.821 0 0 0-3.48-8.413z"/></svg>;
+  const tgSvg    = <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><line x1="22" y1="2" x2="11" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/></svg>;
+  const phoneSvg = <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M22 16.92v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07A19.5 19.5 0 0 1 4.69 12 19.79 19.79 0 0 1 1.61 3.42 2 2 0 0 1 3.6 1.27h3a2 2 0 0 1 2 1.72c.127.96.361 1.903.7 2.81a2 2 0 0 1-.45 2.11L7.91 8.91a16 16 0 0 0 6 6l.92-.92a2 2 0 0 1 2.11-.45c.907.339 1.85.573 2.81.7A2 2 0 0 1 22 16.92z"/></svg>;
+  const map = { Ticket:[emailSvg,"#6366f1","#ede9fe"], WhatsApp:[waSvg,"#16a34a","#dcfce7"], Telefone:[phoneSvg,"#0369a1","#e0f2fe"], Telegram:[tgSvg,"#0369a1","#e0f2fe"] };
+  const [icon, color, bg] = map[via] || [null,"#475569","#f1f5f9"];
+  return <span style={{ display:"inline-flex", alignItems:"center", gap:5, fontSize:12, color, fontWeight:600, background:bg, padding:"3px 9px", borderRadius:20, whiteSpace:"nowrap" }}>{icon}{via}</span>;
 }
 function DeptBadge({ dept }) {
-  return <span style={{ background:"#f1f5f9", color:"#475569", padding:"3px 9px", borderRadius:20, fontSize:11, fontWeight:600, whiteSpace:"nowrap", display:"inline-block" }}>{dept}</span>;
+  return <span style={{ background:"#f1f5f9", color:"#475569", padding:"3px 10px", borderRadius:20, fontSize:11, fontWeight:600, whiteSpace:"nowrap", display:"inline-block", letterSpacing:0.1 }}>{dept}</span>;
+}
+
+// ── Record list primitives ─────────────────────────────────────────────
+
+function Sep({ dark }) {
+  return <span style={{ width:3, height:3, borderRadius:"50%", background:dark?"#334155":"#cbd5e1", flexShrink:0, display:"inline-block" }} />;
+}
+
+function IconBtn({ children, onClick, title, active=false, activeColor="#10b981", danger=false, dark, t }) {
+  const bgOn  = active ? `${activeColor}22` : "none";
+  const brdOn = active ? `${activeColor}55` : (dark ? "#2d3f55" : "#dde3ea");
+  const clr   = danger ? "#f87171" : (active ? activeColor : t.textMuted);
+  return (
+    <button onClick={onClick} title={title}
+      style={{ background:bgOn, border:`1px solid ${danger?"rgba(248,113,113,0.35)":brdOn}`, borderRadius:7, width:28, height:28, cursor:"pointer", display:"flex", alignItems:"center", justifyContent:"center", color:clr, transition:"background 0.12s, color 0.12s", flexShrink:0, ...FF }}
+      onMouseEnter={e=>{ e.currentTarget.style.background=danger?"rgba(239,68,68,0.12)":(active?`${activeColor}33`:(dark?"rgba(255,255,255,0.07)":"#eef1f5")); e.currentTarget.style.color=danger?"#f87171":(active?activeColor:t.text); }}
+      onMouseLeave={e=>{ e.currentTarget.style.background=bgOn; e.currentTarget.style.color=clr; }}>
+      {children}
+    </button>
+  );
+}
+
+function RecordRow({ r, employees, tiposMap, togglePrio, togglePesquisa, updateStatus, setModal, setConfirmId, setAgendaModal, setTipoEdit }) {
+  const { t, dark } = useTheme();
+  const [hover, setHover]           = useState(false);
+  const [statusOpen, setStatusOpen] = useState(false);
+  const [dropPos, setDropPos]       = useState(null);
+  const statusRef                   = useRef(null);
+
+  const atend = employees.find(e => e.id === r.atendenteId);
+  const cfg   = STATUS_CFG[r.status] || { bar:"#94a3b8", bg:"#f1f5f9", text:"#475569", dot:"#94a3b8", darkBg:"rgba(148,163,184,0.1)", darkText:"#94a3b8", darkBorder:"transparent" };
+
+  const rowBg = dark
+    ? (hover ? "#1c3048" : (r.prioridade ? "#1d1f13" : "#1e293b"))
+    : (hover ? "#f6f9fc" : (r.prioridade ? "#fff8f1" : "#fff"));
+
+  function openDrop(e) {
+    e.stopPropagation();
+    if (statusRef.current) {
+      const rect = statusRef.current.getBoundingClientRect();
+      setDropPos({ top: rect.bottom + 6, right: window.innerWidth - rect.right });
+    }
+    setStatusOpen(v => !v);
+  }
+
+  useEffect(() => {
+    if (!statusOpen) return;
+    const close = () => setStatusOpen(false);
+    document.addEventListener("click", close);
+    return () => document.removeEventListener("click", close);
+  }, [statusOpen]);
+
+  const sbg = dark ? cfg.darkBg    : cfg.bg;
+  const scl = dark ? cfg.darkText  : cfg.text;
+  const sbd = dark ? cfg.darkBorder : "transparent";
+
+  return (
+    <>
+      <div
+        style={{ position:"relative", display:"flex", alignItems:"stretch", background:rowBg, borderRadius:10, border:`1px solid ${dark?"rgba(255,255,255,0.07)":"#e8edf2"}`, overflow:"hidden", transition:"background 0.12s, box-shadow 0.12s", boxShadow:hover?(dark?"0 2px 14px rgba(0,0,0,0.35)":"0 2px 10px rgba(0,0,0,0.07)"):"none", ...FF }}
+        onMouseEnter={() => setHover(true)}
+        onMouseLeave={() => setHover(false)}
+      >
+        {/* Status color bar */}
+        <div style={{ width:4, alignSelf:"stretch", background:cfg.bar, flexShrink:0 }} />
+
+        {/* BLOCK 0 — Status selector */}
+        <div style={{ flexShrink:0, padding:"0 16px", display:"flex", alignItems:"center", justifyContent:"center" }}>
+          <button ref={statusRef} onClick={openDrop}
+            style={{ display:"inline-flex", alignItems:"center", gap:6, background:dark?"rgba(255,255,255,0.05)":"#f1f5f9", color:t.textMuted, border:`1px solid ${dark?"#2d3f55":"#dde3ea"}`, padding:"5px 9px 5px 8px", borderRadius:20, fontSize:11.5, fontWeight:500, whiteSpace:"nowrap", cursor:"pointer", ...FF, minWidth:136, transition:"opacity 0.12s" }}>
+            <span style={{ width:6, height:6, borderRadius:"50%", background:cfg.bar, flexShrink:0, opacity:0.7 }} />
+            {r.status}
+            <svg width="9" height="9" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" style={{ marginLeft:"auto" }}><polyline points="6 9 12 15 18 9"/></svg>
+          </button>
+        </div>
+
+        {/* BLOCK 1 — Title · metadata · tipo badge */}
+        <div style={{ width:400, flexShrink:0, padding:"11px 18px 11px 16px", borderRight:"none", display:"flex", flexDirection:"column", justifyContent:"center", gap:4 }}>
+          <div style={{ fontWeight:600, fontSize:13.5, color:t.text, overflow:"hidden", textOverflow:"ellipsis", whiteSpace:"nowrap" }}>
+            {r.cliente}
+          </div>
+          <div style={{ display:"flex", alignItems:"center", gap:5, flexWrap:"wrap" }}>
+            <span style={{ fontSize:11, color:t.textMuted, fontWeight:500, fontVariantNumeric:"tabular-nums" }}>#{r.id}</span>
+            <Sep dark={dark} />
+            <span style={{ fontSize:11, color:t.textMuted }}>{r.data}</span>
+            {atend && (<>
+              <Sep dark={dark} />
+              <div style={{ display:"flex", alignItems:"center", gap:3 }}>
+                <Avatar name={atend.name} color={atend.color} size={13} />
+                <span style={{ fontSize:11, color:t.textMuted }}>{atend.name}</span>
+              </div>
+            </>)}
+          </div>
+          <div>
+            <TipoBadge tipo={r.tipo} tipoObj={tiposMap[r.tipo]} onClick={() => tiposMap[r.tipo] && setTipoEdit({...tiposMap[r.tipo]})} />
+          </div>
+        </div>
+
+        <div style={{ width:1, height:22, background:dark?"rgba(255,255,255,0.13)":"#d1d5db", alignSelf:"center", flexShrink:0 }} />
+
+        {/* BLOCK 2 — Canal de atendimento */}
+        <div style={{ width:250, flexShrink:0, padding:"11px 18px", borderRight:"none", display:"flex", flexDirection:"column", justifyContent:"center", gap:4 }}>
+          {r.via && (
+            <div style={{ display:"flex", alignItems:"center", gap:8 }}>
+              <div style={{ flexShrink:0, width:88 }}><ViaBadge via={r.via} /></div>
+              {r.contato && (
+                r.via === "Ticket"
+                  ? <a href={/^https?:\/\//i.test(r.contato)?r.contato:`https://${r.contato}`} target="_blank" rel="noreferrer"
+                      style={{ fontSize:11, color:"#818cf8", fontWeight:500, textDecoration:"none", display:"flex", alignItems:"center", gap:3, overflow:"hidden", whiteSpace:"nowrap" }}>
+                      <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/></svg>
+                      <span style={{ overflow:"hidden", textOverflow:"ellipsis", whiteSpace:"nowrap", maxWidth:100 }}>{r.contato}</span>
+                    </a>
+                  : <span style={{ fontSize:11, color:t.textMuted, overflow:"hidden", textOverflow:"ellipsis", whiteSpace:"nowrap", maxWidth:100 }}>{r.contato}</span>
+              )}
+            </div>
+          )}
+          {r.via2 && (
+            <div style={{ display:"flex", alignItems:"center", gap:8 }}>
+              <div style={{ flexShrink:0, width:88 }}><ViaBadge via={r.via2} /></div>
+              {r.contato2 && (
+                r.via2 === "Ticket"
+                  ? <a href={/^https?:\/\//i.test(r.contato2)?r.contato2:`https://${r.contato2}`} target="_blank" rel="noreferrer"
+                      style={{ fontSize:11, color:"#818cf8", fontWeight:500, textDecoration:"none", display:"flex", alignItems:"center", gap:3, overflow:"hidden", whiteSpace:"nowrap" }}>
+                      <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/></svg>
+                      <span style={{ overflow:"hidden", textOverflow:"ellipsis", whiteSpace:"nowrap", maxWidth:100 }}>{r.contato2}</span>
+                    </a>
+                  : <span style={{ fontSize:11, color:t.textMuted, overflow:"hidden", textOverflow:"ellipsis", whiteSpace:"nowrap", maxWidth:100 }}>{r.contato2}</span>
+              )}
+            </div>
+          )}
+        </div>
+
+        {/* BLOCK 3 — Descrição / informação complementar */}
+        <div style={{ flex:1, padding:"11px 18px", borderRight:"none", display:"flex", alignItems:"center", minWidth:0 }}>
+          {r.descricao
+            ? <span style={{ fontSize:11.5, color:t.textMuted, lineHeight:1.55 }}>{r.descricao}</span>
+            : <span style={{ fontSize:11, color:dark?"#334155":"#d1d5db" }}>—</span>
+          }
+        </div>
+
+        {/* BLOCK 4 — Ações + Status */}
+        <div style={{ display:"flex", alignItems:"center", justifyContent:"center", gap:5, padding:"0 13px", flexShrink:0 }}>
+          <IconBtn title={r.prioridade?"Remover prioridade":"Marcar como prioritário"} active={!!r.prioridade} activeColor="#f97316" onClick={()=>togglePrio(r.id)} dark={dark} t={t}>
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+              <line x1="12" y1="1" x2="12" y2="3"/>
+              <line x1="4.22" y1="4.22" x2="5.64" y2="5.64"/>
+              <line x1="19.78" y1="4.22" x2="18.36" y2="5.64"/>
+              <line x1="1.5" y1="10" x2="3.5" y2="10"/>
+              <line x1="20.5" y1="10" x2="22.5" y2="10"/>
+              <path d="M7 18h10l1 3H6l1-3z"/>
+              <path d="M8 18V9.5a4 4 0 0 1 8 0V18"/>
+              <path d="M10 13h1.5"/>
+            </svg>
+          </IconBtn>
+          <IconBtn title={r.pesquisaEnviada?"Pesquisa enviada":"Marcar pesquisa enviada"} active={!!r.pesquisaEnviada} activeColor="#10b981" onClick={()=>togglePesquisa(r.id)} dark={dark} t={t}>
+            <svg width="13" height="10" viewBox="0 0 34 26" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><line x1="0" y1="7" x2="8" y2="7"/><line x1="2" y1="13" x2="8" y2="13"/><rect x="10" y="3" width="22" height="16" rx="2"/><polyline points="10,3 21,12 32,3"/></svg>
+          </IconBtn>
+          {r.agendamento && !r.agendamento.concluido && (
+            <IconBtn title={r.agendamento.titulo} active activeColor="#f59e0b" onClick={()=>setAgendaModal(r)} dark={dark} t={t}>
+              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
+            </IconBtn>
+          )}
+          <IconBtn title="Editar" onClick={()=>setModal({mode:"edit",record:r})} dark={dark} t={t}>
+            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>
+          </IconBtn>
+          <IconBtn title="Excluir" danger onClick={()=>setConfirmId(r.id)} dark={dark} t={t}>
+            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2"/></svg>
+          </IconBtn>
+        </div>
+      </div>
+
+      {/* Status dropdown — position:fixed escapes overflow:hidden */}
+      {statusOpen && dropPos && (
+        <div style={{ position:"fixed", top:dropPos.top, right:dropPos.right, zIndex:9999, background:dark?"#1e293b":"#fff", border:`1px solid ${dark?"#334155":"#e2e8f0"}`, borderRadius:10, boxShadow:"0 10px 32px rgba(0,0,0,0.25)", overflow:"hidden", minWidth:172, ...FF }}
+          onClick={e=>e.stopPropagation()}>
+          {["Em atendimento","Resolvido","Pendente"].map(s => {
+            const sc  = STATUS_CFG[s] || {};
+            const act = r.status === s;
+            return (
+              <button key={s} onClick={()=>{updateStatus(r,s);setStatusOpen(false);}}
+                style={{ display:"flex", alignItems:"center", gap:9, width:"100%", padding:"9px 14px", background:act?(dark?"rgba(255,255,255,0.06)":"#f8fafc"):"none", border:"none", cursor:"pointer", fontSize:12.5, fontWeight:act?600:400, color:dark?sc.darkText:sc.text, textAlign:"left", ...FF }}
+                onMouseEnter={e=>{if(!act)e.currentTarget.style.background=dark?"rgba(255,255,255,0.04)":"#f1f5f9";}}
+                onMouseLeave={e=>{if(!act)e.currentTarget.style.background="none";}}>
+                <span style={{ width:7, height:7, borderRadius:"50%", background:sc.bar||"#94a3b8", flexShrink:0 }} />
+                {s}
+                {act && <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" style={{ marginLeft:"auto" }}><polyline points="20 6 9 17 4 12"/></svg>}
+              </button>
+            );
+          })}
+        </div>
+      )}
+    </>
+  );
+}
+
+// ──────────────────────────────────────────────────────────────────────
+
+const CHANGELOG_VERSION = "1.4.0";
+const CHANGELOG_KEY = `changelog_seen_${CHANGELOG_VERSION}`;
+
+const CHANGELOG = [
+  {
+    version: "1.4.0",
+    date: "Out 2025",
+    entries: [
+      { type: "novo",     text: "Novo layout de listagem em blocos — Título, Canal, Descrição e Ações separados visualmente." },
+      { type: "novo",     text: "Seletor de status movido para o início do card, com visual neutro e ponto colorido." },
+      { type: "melhoria", text: "Ícones de ação redesenhados com botões menores e mais discretos." },
+      { type: "melhoria", text: "Barras de cor laterais nos cards indicam o status de forma imediata." },
+      { type: "melhoria", text: "Dropdown de status com posição fixa — não é cortado por nenhum container." },
+    ],
+  },
+  {
+    version: "1.3.0",
+    date: "Set 2025",
+    entries: [
+      { type: "novo",     text: "Ícone de prioridade (sirene) substitui o checkbox — fica laranja quando ativo." },
+      { type: "novo",     text: "Logo da empresa no cabeçalho." },
+      { type: "melhoria", text: "Ícones de olho para mostrar/ocultar senha padronizados em SVG." },
+      { type: "melhoria", text: "Badges de canal (WhatsApp, Telegram, Ticket, Telefone) atualizados com ícones SVG." },
+      { type: "correcao", text: "Borda preta aparecia nos cards de funcionários após passar o mouse — corrigido." },
+    ],
+  },
+  {
+    version: "1.2.0",
+    date: "Ago 2025",
+    entries: [
+      { type: "novo",     text: "Pesquisa de satisfação com controle de envio por atendimento." },
+      { type: "novo",     text: "Agendamentos vinculados aos atendimentos com alerta visual." },
+      { type: "melhoria", text: "Modo escuro com tokens de cor independentes para cada componente." },
+      { type: "correcao", text: "Filtros de listagem agora são salvos localmente entre sessões." },
+    ],
+  },
+];
+
+const TYPE_CFG = {
+  novo:     { label:"Novo",     bg:"#dbeafe", text:"#1d4ed8", darkBg:"rgba(59,130,246,0.15)", darkText:"#93c5fd" },
+  melhoria: { label:"Melhoria", bg:"#dcfce7", text:"#15803d", darkBg:"rgba(34,197,94,0.15)",  darkText:"#86efac" },
+  correcao: { label:"Correção", bg:"#fee2e2", text:"#b91c1c", darkBg:"rgba(239,68,68,0.15)",  darkText:"#fca5a5" },
+};
+
+function ChangelogModal({ onClose, onDismiss }) {
+  const { t, dark } = useTheme();
+  const [noShow, setNoShow] = useState(false);
+
+  function handleClose() {
+    if (noShow) { try { localStorage.setItem(CHANGELOG_KEY, "1"); } catch {} onDismiss?.(); }
+    onClose();
+  }
+
+  return (
+    <Overlay>
+      <div style={{ background:t.card, borderRadius:16, width:"100%", maxWidth:560, maxHeight:"88vh", display:"flex", flexDirection:"column", boxShadow:"0 25px 60px rgba(0,0,0,0.4)", ...FF }}>
+        {/* Header */}
+        <div style={{ display:"flex", alignItems:"center", justifyContent:"space-between", padding:"20px 24px 16px", borderBottom:`1px solid ${t.border}`, flexShrink:0 }}>
+          <div style={{ display:"flex", alignItems:"center", gap:10 }}>
+            <div style={{ width:34, height:34, borderRadius:10, background:dark?"rgba(99,102,241,0.18)":"#ede9fe", display:"flex", alignItems:"center", justifyContent:"center" }}>
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#818cf8" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                <polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/>
+              </svg>
+            </div>
+            <div>
+              <div style={{ fontWeight:700, fontSize:15, color:t.text }}>Novidades</div>
+              <div style={{ fontSize:11, color:t.textMuted, marginTop:1 }}>Atualizações e melhorias do sistema</div>
+            </div>
+          </div>
+          <button onClick={handleClose}
+            style={{ background:"none", border:`1px solid ${t.border}`, borderRadius:8, width:30, height:30, cursor:"pointer", fontSize:18, color:t.textMuted, display:"flex", alignItems:"center", justifyContent:"center", ...FF }}
+            onMouseEnter={e=>e.currentTarget.style.background=t.pageBg}
+            onMouseLeave={e=>e.currentTarget.style.background="none"}>×</button>
+        </div>
+        {/* Body */}
+        <div style={{ overflowY:"auto", flex:1, padding:"20px 24px", display:"flex", flexDirection:"column", gap:28 }}>
+          {CHANGELOG.map((release, ri) => (
+            <div key={ri}>
+              <div style={{ display:"flex", alignItems:"center", gap:10, marginBottom:14 }}>
+                <span style={{ fontSize:13, fontWeight:700, color:t.text }}>v{release.version}</span>
+                <span style={{ fontSize:11, color:t.textMuted, background:dark?"rgba(255,255,255,0.05)":"#f1f5f9", border:`1px solid ${t.border}`, borderRadius:20, padding:"2px 10px" }}>{release.date}</span>
+                {ri === 0 && <span style={{ fontSize:10, fontWeight:700, color:"#818cf8", background:dark?"rgba(99,102,241,0.15)":"#ede9fe", border:"1px solid rgba(99,102,241,0.3)", borderRadius:20, padding:"2px 9px", letterSpacing:0.3 }}>ATUAL</span>}
+              </div>
+              <div style={{ display:"flex", flexDirection:"column", gap:8 }}>
+                {release.entries.map((e, ei) => {
+                  const cfg = TYPE_CFG[e.type];
+                  return (
+                    <div key={ei} style={{ display:"flex", alignItems:"flex-start", gap:10 }}>
+                      <span style={{ fontSize:10, fontWeight:700, padding:"2px 8px", borderRadius:20, background:dark?cfg.darkBg:cfg.bg, color:dark?cfg.darkText:cfg.text, flexShrink:0, marginTop:1, letterSpacing:0.2 }}>{cfg.label}</span>
+                      <span style={{ fontSize:12.5, color:t.textSub, lineHeight:1.55 }}>{e.text}</span>
+                    </div>
+                  );
+                })}
+              </div>
+              {ri < CHANGELOG.length - 1 && <div style={{ height:1, background:t.border, marginTop:24 }} />}
+            </div>
+          ))}
+        </div>
+        {/* Footer */}
+        <div style={{ padding:"14px 24px", borderTop:`1px solid ${t.border}`, flexShrink:0, display:"flex", alignItems:"center", justifyContent:"space-between" }}>
+          <label style={{ display:"flex", alignItems:"center", gap:8, cursor:"pointer", userSelect:"none" }}>
+            <input type="checkbox" checked={noShow} onChange={e=>setNoShow(e.target.checked)}
+              style={{ width:15, height:15, accentColor:"#6366f1", cursor:"pointer" }} />
+            <span style={{ fontSize:12.5, color:t.textMuted }}>Não mostrar novamente ao entrar</span>
+          </label>
+          <button onClick={handleClose}
+            style={{ padding:"7px 20px", background:"#6366f1", border:"none", borderRadius:8, color:"#fff", fontWeight:600, fontSize:13, cursor:"pointer", ...FF }}
+            onMouseEnter={e=>e.currentTarget.style.background="#4f46e5"}
+            onMouseLeave={e=>e.currentTarget.style.background="#6366f1"}>
+            Entendido
+          </button>
+        </div>
+      </div>
+    </Overlay>
+  );
 }
 
 function Overlay({ children, z=1000 }) {
@@ -271,13 +597,16 @@ function ModalShell({ title, onClose, children, footer, maxWidth=560 }) {
   const { t } = useTheme();
   return (
     <Overlay>
-      <div style={{ background:t.card, borderRadius:20, width:"100%", maxWidth, maxHeight:"92vh", display:"flex", flexDirection:"column", boxShadow:"0 30px 60px rgba(0,0,0,0.35)" }}>
-        <div style={{ display:"flex", alignItems:"center", justifyContent:"space-between", padding:"20px 24px 16px", borderBottom:`1px solid ${t.border}`, flexShrink:0 }}>
-          <h2 style={{ margin:0, fontSize:17, fontWeight:700, color:t.text }}>{title}</h2>
-          <button onClick={onClose} style={{ background:t.btnSecBg, border:"none", borderRadius:8, width:32, height:32, cursor:"pointer", fontSize:16, color:t.text, display:"flex", alignItems:"center", justifyContent:"center" }}>×</button>
+      <div style={{ background:t.card, borderRadius:14, width:"100%", maxWidth, maxHeight:"92vh", display:"flex", flexDirection:"column", boxShadow:"0 25px 60px rgba(0,0,0,0.4)" }}>
+        <div style={{ display:"flex", alignItems:"center", justifyContent:"space-between", padding:"18px 22px 16px", borderBottom:`1px solid ${t.border}`, flexShrink:0 }}>
+          <h2 style={{ margin:0, fontSize:15, fontWeight:700, color:t.text, letterSpacing:-0.2 }}>{title}</h2>
+          <button onClick={onClose}
+            onMouseEnter={e=>e.currentTarget.style.background=t.pageBg}
+            onMouseLeave={e=>e.currentTarget.style.background="none"}
+            style={{ background:"none", border:`1px solid ${t.border}`, borderRadius:8, width:30, height:30, cursor:"pointer", fontSize:18, color:t.textMuted, display:"flex", alignItems:"center", justifyContent:"center", transition:"background 0.15s", lineHeight:1 }}>×</button>
         </div>
-        <div style={{ padding:"20px 24px", overflowY:"auto", flex:1 }}>{children}</div>
-        {footer && <div style={{ padding:"16px 24px", borderTop:`1px solid ${t.border}`, flexShrink:0 }}>{footer}</div>}
+        <div style={{ padding:"20px 22px", overflowY:"auto", flex:1 }}>{children}</div>
+        {footer && <div style={{ padding:"14px 22px", borderTop:`1px solid ${t.border}`, flexShrink:0, display:"flex", justifyContent:"flex-end", gap:10 }}>{footer}</div>}
       </div>
     </Overlay>
   );
@@ -285,28 +614,28 @@ function ModalShell({ title, onClose, children, footer, maxWidth=560 }) {
 
 function Field({ label, children }) {
   const { t } = useTheme();
-  return <div style={{ marginBottom:16 }}><label style={{ display:"block", fontSize:11, fontWeight:700, color:t.textMuted, textTransform:"uppercase", letterSpacing:"0.6px", marginBottom:6 }}>{label}</label>{children}</div>;
+  return <div style={{ marginBottom:16 }}><label style={{ display:"block", fontSize:11.5, fontWeight:600, color:t.textMuted, marginBottom:6, userSelect:"none" }}>{label}</label>{children}</div>;
 }
 
 function Toast({ msg }) {
   if (!msg) return null;
-  return <div style={{ position:"fixed", bottom:28, left:"50%", transform:"translateX(-50%)", background:"#1e293b", color:"#f8fafc", padding:"12px 22px", borderRadius:12, fontSize:14, fontWeight:500, boxShadow:"0 8px 24px rgba(0,0,0,0.3)", zIndex:3000, whiteSpace:"nowrap" }}>{msg}</div>;
+  return <div style={{ position:"fixed", bottom:28, left:"50%", transform:"translateX(-50%)", background:"#1e293b", color:"#f1f5f9", padding:"10px 18px", borderRadius:10, fontSize:13.5, fontWeight:500, boxShadow:"0 8px 32px rgba(0,0,0,0.35)", zIndex:3000, whiteSpace:"nowrap", border:"1px solid #334155", display:"flex", alignItems:"center", gap:8, ...FF }}>{msg}</div>;
 }
 
-const btnP = (dis) => ({ flex:1, padding:12, background:dis?"#cbd5e1":"linear-gradient(135deg,#0ea5e9,#6366f1)", border:"none", borderRadius:10, color:"#fff", fontWeight:700, fontSize:14, cursor:dis?"not-allowed":"pointer", ...FF });
-const btnD = { flex:1, padding:12, background:"#dc2626", border:"none", borderRadius:10, color:"#fff", fontWeight:700, fontSize:14, cursor:"pointer", ...FF };
+const btnP = (dis) => ({ flex:1, padding:"10px 20px", background:dis?"#e2e8f0":"#6366f1", border:"none", borderRadius:8, color:dis?"#94a3b8":"#fff", fontWeight:600, fontSize:14, cursor:dis?"not-allowed":"pointer", ...FF });
+const btnD = { flex:1, padding:"10px 20px", background:"#ef4444", border:"none", borderRadius:8, color:"#fff", fontWeight:600, fontSize:14, cursor:"pointer", ...FF };
 
 function ConfirmDialog({ message, onConfirm, onCancel }) {
   const { t } = useTheme();
   return (
     <Overlay z={1100}>
-      <div style={{ background:t.card, borderRadius:18, padding:32, maxWidth:400, width:"90%", textAlign:"center", boxShadow:"0 20px 50px rgba(0,0,0,0.3)" }}>
-        <div style={{ fontSize:44, marginBottom:12 }}>⚠️</div>
-        <h3 style={{ margin:"0 0 8px", color:t.text, fontSize:17 }}>Tem certeza?</h3>
-        <p style={{ color:t.textSub, fontSize:14, margin:"0 0 24px", lineHeight:1.6 }}>{message}</p>
-        <div style={{ display:"flex", gap:12 }}>
-          <button onClick={onCancel} style={{ flex:1, padding:12, background:t.btnSecBg, border:"none", borderRadius:10, color:t.btnSecText, fontWeight:600, fontSize:14, cursor:"pointer", ...FF }}>Cancelar</button>
-          <button onClick={onConfirm} style={btnD}>Confirmar</button>
+      <div style={{ background:t.card, borderRadius:14, padding:"26px 26px 22px", maxWidth:400, width:"90%", boxShadow:"0 25px 60px rgba(0,0,0,0.4)" }}>
+        <div style={{ width:42, height:42, borderRadius:10, background:"#fef2f2", display:"flex", alignItems:"center", justifyContent:"center", fontSize:18, marginBottom:14 }}>⚠️</div>
+        <h3 style={{ margin:"0 0 8px", color:t.text, fontSize:15, fontWeight:700 }}>Confirmar ação</h3>
+        <p style={{ color:t.textSub, fontSize:13.5, margin:"0 0 22px", lineHeight:1.6 }}>{message}</p>
+        <div style={{ display:"flex", gap:10, justifyContent:"flex-end" }}>
+          <button onClick={onCancel} style={{ padding:"9px 18px", background:t.btnSecBg, border:`1px solid ${t.border}`, borderRadius:8, color:t.btnSecText, fontWeight:600, fontSize:14, cursor:"pointer", ...FF }}>Cancelar</button>
+          <button onClick={onConfirm} style={{ ...btnD, flex:"none", padding:"9px 18px" }}>Excluir</button>
         </div>
       </div>
     </Overlay>
@@ -398,12 +727,331 @@ async function saveDepartments(list) {
   try { await syncCol("departments", list); } catch {}
 }
 
+// ── Signature Functions ───────────────────────────────────────────────
+
+async function loadSignature(id) {
+  try {
+    const snap = await getDoc(doc(db, "signatures", id));
+    return snap.exists() ? snap.data().base64 : null;
+  } catch { return null; }
+}
+
+async function saveSignature(id, base64) {
+  try {
+    await setDoc(doc(db, "signatures", id), { base64, updatedAt: new Date().toISOString() });
+    return true;
+  } catch(e) {
+    console.error("saveSignature error:", id, e);
+    return false;
+  }
+}
+
+async function deleteSignature(id) {
+  try { await deleteDoc(doc(db, "signatures", id)); } catch {}
+}
+
+async function loadAllSignatures() {
+  try {
+    const snap = await getDocs(collection(db, "signatures"));
+    const map = {};
+    snap.docs.forEach(d => { map[d.id] = d.data().base64; });
+    return map;
+  } catch { return {}; }
+}
+
+// ── Satisfação — Firebase helpers ────────────────────────────────────
+
+async function loadSatImportacoes() {
+  try {
+    const snap = await getDocs(collection(db, "satisfacao"));
+    return snap.docs.map(d => d.data())
+      .sort((a, b) => (b.ano * 100 + b.mes) - (a.ano * 100 + a.mes));
+  } catch { return []; }
+}
+
+async function saveSatImportacao(key, data) {
+  await setDoc(doc(db, "satisfacao", key), data);
+}
+
+async function deleteSatImportacao(mes, ano) {
+  await deleteDoc(doc(db, "satisfacao", `${ano}-${String(mes).padStart(2, "0")}`));
+}
+
+async function loadSatMapeamentos() {
+  try {
+    const d = await getDoc(doc(db, "satisfacao_config", "mapeamentos"));
+    return d.exists() ? (d.data().nomesMap || {}) : {};
+  } catch { return {}; }
+}
+
+async function saveSatMapeamentos(map) {
+  try { await setDoc(doc(db, "satisfacao_config", "mapeamentos"), { nomesMap: map }); } catch {}
+}
+
+async function loadSatApiConfig() {
+  try {
+    const d = await getDoc(doc(db, "satisfacao_config", "api"));
+    return d.exists() ? d.data() : {};
+  } catch { return {}; }
+}
+
+async function saveSatApiConfig(data) {
+  try { await setDoc(doc(db, "satisfacao_config", "api"), data); } catch {}
+}
+
+// Busca o comentário de uma pesquisa pelo protocolo via API configurada.
+// Tenta os campos mais comuns na resposta JSON; ajuste quando tiver a doc da API.
+async function fetchComentarioLogike(protocolo, cfg) {
+  if (!cfg?.apiKey || !cfg?.baseUrl || !protocolo) return null;
+  try {
+    const endpoint = (cfg.endpoint || "/{protocolo}")
+      .replace("{protocolo}", encodeURIComponent(String(protocolo).trim()));
+    const url = cfg.baseUrl.replace(/\/$/, "") + endpoint;
+    const res = await fetch(url, {
+      headers: {
+        "Authorization": `Bearer ${cfg.apiKey}`,
+        "X-Api-Key": cfg.apiKey,
+        "Accept": "application/json",
+      },
+    });
+    if (!res.ok) return null;
+    const json = await res.json();
+    return json.comentario ?? json.comment ?? json.texto ?? json.observacao
+        ?? json.feedback  ?? json.resposta ?? json.message ?? null;
+  } catch { return null; }
+}
+
+// ── Satisfação — parsing utilities ───────────────────────────────────
+
+function satNorm(s) {
+  return String(s || "").toLowerCase()
+    .normalize("NFD").replace(/[̀-ͯ]/g, "")
+    .replace(/[^a-z0-9 ]/g, " ").replace(/\s+/g, " ").trim();
+}
+
+function satDetectCol(headers, keywords) {
+  const normH = headers.map(satNorm);
+  // Iterate keywords first (priority order) so a specific keyword wins
+  // over a generic one that might match an earlier column
+  for (const kw of keywords.map(satNorm))
+    for (let i = 0; i < normH.length; i++)
+      if (normH[i] === kw || normH[i].includes(kw)) return i;
+  return -1;
+}
+
+const SAT_SCORE_MAP = {
+  "muito insatisfeito": 1, "insatisfeito": 2, "indiferente": 3,
+  "neutro": 3, "satisfeito": 4, "muito satisfeito": 5,
+};
+
+function satParseScore(v) {
+  if (v === null || v === undefined || v === "") return null;
+  const s = satNorm(String(v));
+  if (!s || ["sem resposta", "-", "n a", "nao respondeu", "nr"].includes(s)) return null;
+  if (s in SAT_SCORE_MAP) return SAT_SCORE_MAP[s];
+  const n = parseFloat(String(v));
+  if (!isNaN(n) && n >= 1 && n <= 5) return Math.round(n);
+  return null;
+}
+
+function satParseData(v) {
+  if (!v) return null;
+  if (v instanceof Date) return v.toISOString().slice(0, 10);
+  const s = String(v).trim();
+  if (!s || s === "-") return null;
+  const m = s.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})$/);
+  if (m) return `${m[3]}-${m[2].padStart(2, "0")}-${m[1].padStart(2, "0")}`;
+  const d = new Date(s);
+  if (!isNaN(d.getTime())) return d.toISOString().slice(0, 10);
+  return null;
+}
+
+const SAT_AMOSTRAGEM_MIN = 5;
+
+function satCalcMetricas(importacoes, employeeId, inicio, fim) {
+  const todos = [];
+  for (const imp of importacoes) {
+    for (const reg of (imp.registros || [])) {
+      if (reg.employeeId !== employeeId) continue;
+      const d = reg.data ? new Date(reg.data) : new Date(imp.ano, imp.mes - 1, 15);
+      if (d >= inicio && d <= fim) todos.push(reg);
+    }
+  }
+  const resp = todos.filter(r => r.temResposta);
+
+  function calcInd(field) {
+    const vals = resp.map(r => r[field]).filter(v => v != null);
+    if (!vals.length) return null;
+    const media = vals.reduce((a, b) => a + b, 0) / vals.length;
+    const pos = vals.filter(v => v >= 4).length;
+    return { media: Math.round(media * 10) / 10, total: vals.length, pctPos: Math.round(pos / vals.length * 1000) / 10 };
+  }
+
+  const at  = calcInd("atendimento");
+  const nec = calcInd("necessidades");
+  const sis = calcInd("sistema");
+  const inds = [at, nec, sis].filter(Boolean);
+  const geral = inds.length ? Math.round(inds.reduce((a, b) => a + b.media, 0) / inds.length * 10) / 10 : null;
+
+  let totalVals = 0, totalPos = 0;
+  for (const r of resp) {
+    const scores = [r.atendimento, r.necessidades, r.sistema].filter(v => v != null);
+    totalVals += scores.length;
+    totalPos  += scores.filter(v => v >= 4).length;
+  }
+  const pctPos = totalVals > 0 ? Math.round(totalPos / totalVals * 1000) / 10 : null;
+
+  const dist = { muitoInsatisfeito: 0, insatisfeito: 0, indiferente: 0, satisfeito: 0, muitoSatisfeito: 0 };
+  for (const r of resp) {
+    const scores = [r.atendimento, r.necessidades, r.sistema].filter(v => v != null);
+    if (!scores.length) continue;
+    const c = Math.round(scores.reduce((a, b) => a + b, 0) / scores.length);
+    if (c <= 1) dist.muitoInsatisfeito++;
+    else if (c === 2) dist.insatisfeito++;
+    else if (c === 3) dist.indiferente++;
+    else if (c === 4) dist.satisfeito++;
+    else dist.muitoSatisfeito++;
+  }
+
+  const hist = [];
+  const now = new Date();
+  for (let i = 11; i >= 0; i--) {
+    const d = new Date(now.getFullYear(), now.getMonth() - i, 1);
+    const mes = d.getMonth() + 1, ano = d.getFullYear();
+    const imp = importacoes.find(im => im.mes === mes && im.ano === ano);
+    if (!imp) continue;
+    const recs = (imp.registros || []).filter(r => r.employeeId === employeeId && r.temResposta);
+    const vals = recs.flatMap(r => [r.atendimento, r.necessidades, r.sistema]).filter(v => v != null);
+    if (!vals.length) continue;
+    hist.push({
+      label: `${MONTHS_SHORT[mes - 1].replace(".", "")}.${String(ano).slice(2)}`,
+      media: Math.round(vals.reduce((a, b) => a + b, 0) / vals.length * 10) / 10,
+    });
+  }
+
+  return {
+    totalEnviadas: todos.length,
+    totalRespostas: resp.length,
+    taxaResposta: todos.length ? Math.round(resp.length / todos.length * 1000) / 10 : 0,
+    geral, pctPos, at, nec, sis, dist, hist,
+    respostas: resp
+      .sort((a, b) => ((b.data || "") > (a.data || "") ? 1 : -1))
+      .slice(0, 100)
+      .map(r => {
+        const scores = [r.atendimento, r.necessidades, r.sistema].filter(v => v != null);
+        return { ...r, mediaGeral: scores.length ? Math.round(scores.reduce((a, b) => a + b, 0) / scores.length * 10) / 10 : null };
+      }),
+  };
+}
+
+function satFindEmployee(nome, nmEmp) {
+  const norm = satNorm(nome);
+  if (!norm) return null;
+
+  // Strip trailing suffix after separators: "Adriel Santos - Comercial" → "adriel santos"
+  const core = norm.replace(/\s*[-\/|([].*/,"").trim() || norm;
+
+  // 1. Exact match (full or stripped)
+  let m = nmEmp.find(e => e.norm === norm || e.norm === core);
+  if (m) return m.id;
+
+  // 2. One name fully contained in the other ("adriel" ↔ "adriel santos")
+  m = nmEmp.find(e =>
+    e.norm.includes(norm) || norm.includes(e.norm) ||
+    e.norm.includes(core) || core.includes(e.norm)
+  );
+  if (m) return m.id;
+
+  // 3. Word-overlap: ≥60% of the employee's significant words appear in the Excel name
+  //    (handles "Maria da Silva" vs "Maria Silva" — "da" filtered as too short)
+  const excelWords = new Set([...norm.split(" "), ...core.split(" ")].filter(w => w.length > 2));
+  let bestScore = 0, bestEmp = null;
+  for (const emp of nmEmp) {
+    const empWords = emp.norm.split(" ").filter(w => w.length > 2);
+    if (!empWords.length) continue;
+    const hits = empWords.filter(w => excelWords.has(w)).length;
+    const score = hits / empWords.length;
+    if (score > bestScore && score >= 0.6) { bestScore = score; bestEmp = emp; }
+  }
+  if (bestEmp) return bestEmp.id;
+
+  // 4. First-name match — only when unambiguous (exactly one employee has that first name)
+  const firstName = (core.split(" ")[0] || norm.split(" ")[0]);
+  if (firstName.length > 2) {
+    const candidates = nmEmp.filter(e => e.norm.split(" ")[0] === firstName);
+    if (candidates.length === 1) return candidates[0].id;
+  }
+
+  return null;
+}
+
+// ── Image compression helper ──────────────────────────────────────────
+// Resizes and compresses image to stay safely below Firestore's 1MB doc limit.
+function compressImage(dataUrl, maxW = 600, maxH = 400, keepAlpha = false) {
+  return new Promise(resolve => {
+    const img = new Image();
+    img.onload = () => {
+      const scale = Math.min(1, maxW / img.width, maxH / img.height);
+      const canvas = document.createElement("canvas");
+      canvas.width  = Math.round(img.width  * scale);
+      canvas.height = Math.round(img.height * scale);
+      canvas.getContext("2d").drawImage(img, 0, 0, canvas.width, canvas.height);
+      let out = canvas.toDataURL("image/png");
+      // Never convert to JPEG when transparency must be preserved
+      if (!keepAlpha && out.length > 200000) out = canvas.toDataURL("image/jpeg", 0.82);
+      resolve(out);
+    };
+    img.onerror = () => resolve(dataUrl);
+    img.src = dataUrl;
+  });
+}
+
+// ── SigUploadRow — reused in admin assinaturas tab ────────────────────
+
+function SigUploadRow({ current, saving, onUpload, onDelete, t, keepAlpha = false }) {
+  const fileRef = useRef(null);
+  async function handleFile(f) {
+    if (!f || !f.type.startsWith("image/")) return;
+    const reader = new FileReader();
+    reader.onload = async e => {
+      const compressed = await compressImage(e.target.result, 600, 400, keepAlpha);
+      onUpload(compressed);
+    };
+    reader.readAsDataURL(f);
+  }
+  if (current) {
+    return (
+      <div style={{ display:"flex", alignItems:"center", gap:8 }}>
+        <img src={current} alt="" style={{ height:36, maxWidth:120, objectFit:"contain", border:`1px solid ${t.border}`, borderRadius:8, background:"#fff", padding:4 }} />
+        <button onClick={() => fileRef.current?.click()} disabled={saving}
+          style={{ padding:"6px 12px", background:t.btnSecBg, border:`1px solid ${t.border}`, borderRadius:8, cursor:"pointer", fontSize:12, color:t.btnSecText, fontWeight:500, ...FF }}>
+          {saving ? "Salvando…" : "Trocar"}
+        </button>
+        <button onClick={onDelete} disabled={saving}
+          style={{ padding:"6px 12px", background:"#fef2f2", border:"1px solid #fecaca", borderRadius:8, cursor:"pointer", fontSize:12, color:"#dc2626", fontWeight:500, ...FF }}>
+          {saving ? "…" : "Remover"}
+        </button>
+        <input ref={fileRef} type="file" accept="image/png,image/jpeg,image/webp" style={{ display:"none" }} onChange={e => { handleFile(e.target.files?.[0]); e.target.value=""; }} />
+      </div>
+    );
+  }
+  return (
+    <div>
+      <button onClick={() => fileRef.current?.click()} disabled={saving}
+        style={{ padding:"8px 16px", background:t.btnSecBg, border:`1.5px dashed ${t.border}`, borderRadius:8, cursor:"pointer", fontSize:13, color:t.textSub, fontWeight:500, ...FF }}>
+        {saving ? "Salvando…" : "Selecionar imagem"}
+      </button>
+      <input ref={fileRef} type="file" accept="image/png,image/jpeg,image/webp" style={{ display:"none" }} onChange={e => { handleFile(e.target.files?.[0]); e.target.value=""; }} />
+    </div>
+  );
+}
+
 // ── Department Modal ──────────────────────────────────────────────────
 
 function DepartmentModal({ dept, onSave, onClose }) {
   const { t } = useTheme();
-  const inp = { width:"100%", padding:"9px 12px", border:`1.5px solid ${t.inputBorder}`, borderRadius:9, fontSize:14, color:t.inputText, outline:"none", boxSizing:"border-box", background:t.inputBg, ...FF };
-  const bS  = { flex:1, padding:12, background:t.btnSecBg, border:"none", borderRadius:10, color:t.btnSecText, fontWeight:600, fontSize:14, cursor:"pointer", ...FF };
+  const inp = INP(t);
+  const bS  = { ...BTN_SEC(t), flex:1 };
 
   const editing = !!dept;
   const [name,  setName]  = useState(dept?.name || "");
@@ -418,7 +1066,7 @@ function DepartmentModal({ dept, onSave, onClose }) {
     <ModalShell
       title={editing ? "✏️  Editar Departamento" : "➕  Novo Departamento"}
       onClose={onClose} maxWidth={420}
-      footer={<div style={{ display:"flex", gap:12 }}><button onClick={onClose} style={bS}>Cancelar</button><button onClick={submit} style={btnP(false)}>{editing ? "Salvar Alterações" : "Criar Departamento"}</button></div>}
+      footer={<><button onClick={onClose} style={bS}>Cancelar</button><button onClick={submit} style={btnP(false)}>{editing ? "Salvar Alterações" : "Criar Departamento"}</button></>}
     >
       <Field label="Nome do departamento *">
         <input value={name} onChange={e=>{setName(e.target.value);setError("");}} style={inp} placeholder="Ex: Suporte ao Cliente, Financeiro..." autoFocus />
@@ -432,9 +1080,9 @@ function DepartmentModal({ dept, onSave, onClose }) {
 
 function TipoModal({ tipo, departments=[], onSave, onClose }) {
   const { t } = useTheme();
-  const inp = { width:"100%", padding:"9px 12px", border:`1.5px solid ${t.inputBorder}`, borderRadius:9, fontSize:14, color:t.inputText, outline:"none", boxSizing:"border-box", background:t.inputBg, ...FF };
-  const sel = { ...inp, cursor:"pointer" };
-  const bS  = { flex:1, padding:12, background:t.btnSecBg, border:"none", borderRadius:10, color:t.btnSecText, fontWeight:600, fontSize:14, cursor:"pointer", ...FF };
+  const inp = INP(t);
+  const sel = SEL(t);
+  const bS  = { ...BTN_SEC(t), flex:1 };
 
   const editing = !!tipo;
   const [label,      setLabel]      = useState(tipo?.label      || "");
@@ -452,7 +1100,7 @@ function TipoModal({ tipo, departments=[], onSave, onClose }) {
     <ModalShell
       title={editing ? "✏️  Editar Tipo" : "➕  Novo Tipo de Atendimento"}
       onClose={onClose} maxWidth={460}
-      footer={<div style={{ display:"flex", gap:12 }}><button onClick={onClose} style={bS}>Cancelar</button><button onClick={submit} style={btnP(false)}>{editing ? "Salvar Alterações" : "Criar Tipo"}</button></div>}
+      footer={<><button onClick={onClose} style={bS}>Cancelar</button><button onClick={submit} style={btnP(false)}>{editing ? "Salvar Alterações" : "Criar Tipo"}</button></>}
     >
       <Field label="Nome do tipo *">
         <input value={label} onChange={e=>{setLabel(e.target.value);setError("");}} style={inp} placeholder="Ex: Negociação, Suporte Técnico..." autoFocus />
@@ -505,7 +1153,7 @@ function TipoColorPanel({ tipos, department, onSave, onClose, initialTipo=null }
   const { t } = useTheme();
   const relevant = tipos.filter(tp => tp.department === department || tp.department === "Geral");
   const [editing, setEditing] = useState(initialTipo); // { ...tipo }
-  const bS = { padding:"10px 18px", background:t.btnSecBg, border:"none", borderRadius:10, color:t.btnSecText, fontWeight:600, fontSize:14, cursor:"pointer", ...FF };
+  const bS = BTN_SEC(t);
 
   if (editing) return (
     <ModalShell title={`🎨  Cores — ${editing.label}`} onClose={onClose} maxWidth={400}
@@ -614,9 +1262,9 @@ function PageCard({ pg, employees, cnt, isCurrentMonth, actions, onClick }) {
 
 function PageModal({ page, employees, departments=[], onSave, onClose }) {
   const { t } = useTheme();
-  const inp = { width:"100%", padding:"9px 12px", border:`1.5px solid ${t.inputBorder}`, borderRadius:9, fontSize:14, color:t.inputText, outline:"none", boxSizing:"border-box", background:t.inputBg, ...FF };
-  const sel = { ...inp, cursor:"pointer" };
-  const bS  = { flex:1, padding:12, background:t.btnSecBg, border:"none", borderRadius:10, color:t.btnSecText, fontWeight:600, fontSize:14, cursor:"pointer", ...FF };
+  const inp = INP(t);
+  const sel = SEL(t);
+  const bS  = { ...BTN_SEC(t), flex:1 };
 
   const cur = nowMY();
   const editing = !!page;
@@ -641,7 +1289,7 @@ function PageModal({ page, employees, departments=[], onSave, onClose }) {
     <ModalShell
       title={editing ? "✏️  Editar Planilha" : "📄  Nova Planilha de Atendimento"}
       onClose={onClose} maxWidth={500}
-      footer={<div style={{ display:"flex", gap:12 }}><button onClick={onClose} style={bS}>Cancelar</button><button onClick={submit} style={btnP(false)}>{editing?"Salvar Alterações":"Criar Planilha"}</button></div>}
+      footer={<><button onClick={onClose} style={bS}>Cancelar</button><button onClick={submit} style={btnP(false)}>{editing?"Salvar Alterações":"Criar Planilha"}</button></>}
     >
       <Field label="Nome da planilha *">
         <input value={name} onChange={e=>{setName(e.target.value);setError("");}} style={inp} placeholder="Ex: Atendimentos - Junho 2026" autoFocus />
@@ -693,9 +1341,9 @@ function PageModal({ page, employees, departments=[], onSave, onClose }) {
 
 function EmployeeModal({ employee, departments=[], onSave, onClose }) {
   const { t } = useTheme();
-  const inp = { width:"100%", padding:"9px 12px", border:`1.5px solid ${t.inputBorder}`, borderRadius:9, fontSize:14, color:t.inputText, outline:"none", boxSizing:"border-box", background:t.inputBg, ...FF };
-  const sel = { ...inp, cursor:"pointer" };
-  const bS  = { flex:1, padding:12, background:t.btnSecBg, border:"none", borderRadius:10, color:t.btnSecText, fontWeight:600, fontSize:14, cursor:"pointer", ...FF };
+  const inp = INP(t);
+  const sel = SEL(t);
+  const bS  = { ...BTN_SEC(t), flex:1 };
 
   const editing = !!employee;
   const [name,       setName]       = useState(employee?.name       || "");
@@ -713,7 +1361,7 @@ function EmployeeModal({ employee, departments=[], onSave, onClose }) {
 
   return (
     <ModalShell title={editing?"✏️  Editar Atendente":"➕  Novo Atendente"} onClose={onClose} maxWidth={460}
-      footer={<div style={{ display:"flex", gap:12 }}><button onClick={onClose} style={bS}>Cancelar</button><button onClick={submit} style={btnP(false)}>{editing?"Salvar Alterações":"Cadastrar Atendente"}</button></div>}
+      footer={<><button onClick={onClose} style={bS}>Cancelar</button><button onClick={submit} style={btnP(false)}>{editing?"Salvar Alterações":"Cadastrar Atendente"}</button></>}
     >
       <Field label="Nome *">
         <input value={name} onChange={e=>{setName(e.target.value);setError("");}} style={inp} placeholder="Ex: Maria Silva" autoFocus />
@@ -721,7 +1369,12 @@ function EmployeeModal({ employee, departments=[], onSave, onClose }) {
       <Field label="Senha de acesso *">
         <div style={{ position:"relative" }}>
           <input type={showPw?"text":"password"} value={password} onChange={e=>{setPassword(e.target.value);setError("");}} style={{ ...inp, paddingRight:44 }} placeholder="Defina uma senha..." />
-          <button onClick={()=>setShowPw(v=>!v)} style={{ position:"absolute", right:10, top:"50%", transform:"translateY(-50%)", background:"none", border:"none", color:t.textMuted, cursor:"pointer", fontSize:17, padding:4 }}>{showPw?"👁":"👁️"}</button>
+          <button onClick={()=>setShowPw(v=>!v)} style={{ position:"absolute", right:10, top:"50%", transform:"translateY(-50%)", background:"none", border:"none", color:t.textMuted, cursor:"pointer", padding:4, display:"flex", alignItems:"center", justifyContent:"center" }}>
+            {showPw
+              ? <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M2 12s3.6-8 10-8 10 8 10 8-3.6 8-10 8-10-8-10-8z"/><circle cx="12" cy="12" r="3.5"/><circle cx="12" cy="12" r="1.2"/><line x1="3" y1="3" x2="21" y2="21"/></svg>
+              : <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M2 12s3.6-8 10-8 10 8 10 8-3.6 8-10 8-10-8-10-8z"/><circle cx="12" cy="12" r="3.5"/><circle cx="12" cy="12" r="1.2"/></svg>
+            }
+          </button>
         </div>
       </Field>
       <Field label="Departamento">
@@ -753,6 +1406,465 @@ function EmployeeModal({ employee, departments=[], onSave, onClose }) {
   );
 }
 
+// ── Satisfação — Admin tab ────────────────────────────────────────────
+
+function SatisfacaoAdminTab({ employees }) {
+  const { t, dark } = useTheme();
+  const [fase,              setFase]              = useState("idle");
+  const [mesMes,            setMesMes]            = useState(() => new Date().getMonth() + 1);
+  const [mesAno,            setMesAno]            = useState(() => new Date().getFullYear());
+  const [arquivoNome,       setArquivoNome]       = useState("");
+  const [parsedData,        setParsedData]        = useState(null);
+  const [mapeamentosLocais, setMapeamentosLocais] = useState({});
+  const [mapeamentosSalvos, setMapeamentosSalvos] = useState({});
+  const [importacoes,       setImportacoes]       = useState([]);
+  const [confirmando,       setConfirmando]       = useState(false);
+  const [erro,              setErro]              = useState("");
+  const [showHistory,       setShowHistory]       = useState(false);
+  const [carregando,        setCarregando]        = useState(true);
+  const [apiConfig,         setApiConfig]         = useState({});
+  const [apiLocal,          setApiLocal]          = useState({ baseUrl:"", apiKey:"", endpoint:"/{protocolo}" });
+  const [apiSalvando,       setApiSalvando]       = useState(false);
+  const [apiTeste,          setApiTeste]          = useState(null); // null | "ok" | "erro" | "testando"
+  const [showApiConfig,     setShowApiConfig]     = useState(false);
+  const [enrichProgress,    setEnrichProgress]    = useState(null); // null | { total, done }
+  const fileRef = useRef();
+
+  const MN = ["Janeiro","Fevereiro","Março","Abril","Maio","Junho","Julho","Agosto","Setembro","Outubro","Novembro","Dezembro"];
+
+  useEffect(() => {
+    (async () => {
+      const [imps, mmap, apicfg] = await Promise.all([loadSatImportacoes(), loadSatMapeamentos(), loadSatApiConfig()]);
+      setImportacoes(imps);
+      setMapeamentosSalvos(mmap);
+      setApiConfig(apicfg);
+      setApiLocal({ baseUrl: apicfg.baseUrl||"", apiKey: apicfg.apiKey||"", endpoint: apicfg.endpoint||"/{protocolo}" });
+      setCarregando(false);
+    })();
+  }, []);
+
+  const existeImportacao = importacoes.some(i => i.mes === mesMes && i.ano === mesAno);
+
+  const handleFile = file => {
+    if (!file) return;
+    setArquivoNome(file.name);
+    setErro("");
+    const reader = new FileReader();
+    reader.onload = e => {
+      try {
+        const wb  = XLSX.read(e.target.result, { type: "array", cellDates: true });
+        const ws  = wb.Sheets[wb.SheetNames[0]];
+        const raw = XLSX.utils.sheet_to_json(ws, { header: 1, defval: "" });
+        if (raw.length < 2) { setErro("Planilha vazia ou sem dados."); setFase("erro"); return; }
+
+        const headers = raw[0].map(String);
+        const colAtd  = satDetectCol(headers, ["atendente","colaborador","funcionario","employee","nome atendente","nome do atendente"]);
+        const colAt   = satDetectCol(headers, ["atendimento","sat atend","satisfacao com o atend","atendimento ao cliente"]);
+        const colNec  = satDetectCol(headers, ["necessidades","necessid","sat nec","necessidades supridas"]);
+        const colSis  = satDetectCol(headers, ["sistema","sat sist","satisfacao com o sist","satisfacao sistema"]);
+        const colDat  = satDetectCol(headers, ["data","date","dt"]);
+        const colProt = satDetectCol(headers, ["protocolo","protocol","prot"]);
+        const colCli  = satDetectCol(headers, ["cliente","client","nome do cliente"]);
+        const colCom  = satDetectCol(headers, ["comentario","observacao","obs","comment","feedback"]);
+
+        if (colAtd < 0) { setErro("Coluna do atendente não encontrada. O cabeçalho deve conter 'Atendente' ou 'Colaborador'."); setFase("erro"); return; }
+
+        const rowsParsed = [];
+        const uniqueNames = new Set();
+
+        for (let i = 1; i < raw.length; i++) {
+          const r = raw[i];
+          if (!r || r.every(c => !String(c).trim())) continue;
+          const nomeRaw = String(r[colAtd] || "").trim();
+          if (!nomeRaw) continue;
+          uniqueNames.add(nomeRaw);
+          const at  = colAt  >= 0 ? satParseScore(r[colAt])  : null;
+          const nec = colNec >= 0 ? satParseScore(r[colNec]) : null;
+          const sis = colSis >= 0 ? satParseScore(r[colSis]) : null;
+          rowsParsed.push({
+            nomeExcel:  nomeRaw,
+            data:       colDat  >= 0 ? satParseData(r[colDat])         : null,
+            protocolo:  colProt >= 0 ? String(r[colProt] || "").trim() : "",
+            cliente:    colCli  >= 0 ? String(r[colCli]  || "").trim() : "",
+            ...(() => {
+              const raw = colCom >= 0 ? String(r[colCom] || "").trim() : "";
+              const num = Number(raw);
+              // Se for número (0/1) é um flag do sistema — texto vem via API
+              // Se for texto livre já é o comentário em si
+              return { comentario: (!isNaN(num) && raw !== "") ? "" : raw, temComentarioApi: !isNaN(num) && num > 0 };
+            })(),
+            atendimento: at, necessidades: nec, sistema: sis,
+            temResposta: at !== null || nec !== null || sis !== null,
+          });
+        }
+
+        const nmEmp  = (employees || []).map(e => ({ ...e, norm: satNorm(e.name) }));
+        const saved  = { ...mapeamentosSalvos };
+        const matched = {};
+        const unmatchedList = [];
+
+        for (const nome of uniqueNames) {
+          const norm = satNorm(nome);
+          if (saved[norm]) { matched[nome] = saved[norm]; }
+          else {
+            const empId = satFindEmployee(nome, nmEmp);
+            if (empId) matched[nome] = empId;
+            else       { unmatchedList.push(nome); matched[nome] = null; }
+          }
+        }
+
+        setParsedData({ rows: rowsParsed, matchedNames: matched, unmatched: unmatchedList });
+        setMapeamentosLocais({});
+        setFase("preview");
+      } catch (err) {
+        console.error(err);
+        setErro("Erro ao ler o arquivo: " + err.message);
+        setFase("erro");
+      }
+    };
+    reader.readAsArrayBuffer(file);
+  };
+
+  const confirmar = async () => {
+    setConfirmando(true);
+    try {
+      const key      = `${mesAno}-${String(mesMes).padStart(2, "0")}`;
+      const finalMap = { ...parsedData.matchedNames, ...mapeamentosLocais };
+
+      const newMap = { ...mapeamentosSalvos };
+      for (const [nome, empId] of Object.entries(finalMap))
+        if (empId) newMap[satNorm(nome)] = empId;
+      await saveSatMapeamentos(newMap);
+      setMapeamentosSalvos(newMap);
+
+      let registros = parsedData.rows.map(r => ({ ...r, employeeId: finalMap[r.nomeExcel] || null }));
+
+      // ── Enriquecimento via API (busca comentários pelos protocolos) ──────
+      const comApi = apiConfig?.apiKey && apiConfig?.baseUrl
+        ? registros.filter(r => r.temComentarioApi && r.protocolo)
+        : [];
+      if (comApi.length > 0) {
+        setEnrichProgress({ total: comApi.length, done: 0 });
+        for (let i = 0; i < comApi.length; i++) {
+          const texto = await fetchComentarioLogike(comApi[i].protocolo, apiConfig);
+          if (texto) {
+            const idx = registros.findIndex(x => x.protocolo === comApi[i].protocolo);
+            if (idx >= 0) registros[idx] = { ...registros[idx], comentario: texto };
+          }
+          setEnrichProgress({ total: comApi.length, done: i + 1 });
+        }
+        setEnrichProgress(null);
+      }
+
+      const totalResp  = registros.filter(r => r.temResposta).length;
+      await saveSatImportacao(key, {
+        key, mes: mesMes, ano: mesAno, arquivoNome,
+        importadoEm: new Date().toISOString(),
+        totalRegistros: registros.length,
+        totalRespondidos: totalResp,
+        totalSemResposta: registros.length - totalResp,
+        registros,
+      });
+      setImportacoes(await loadSatImportacoes());
+      setFase("concluido");
+    } catch (err) {
+      console.error(err);
+      setErro("Erro ao salvar: " + err.message);
+      setFase("erro");
+    } finally {
+      setConfirmando(false);
+    }
+  };
+
+  const resetar = () => { setFase("idle"); setArquivoNome(""); setParsedData(null); setMapeamentosLocais({}); setErro(""); };
+
+  if (carregando) return <div style={{ textAlign:"center", padding:60, color:t.textMuted }}>Carregando...</div>;
+
+  return (
+    <div style={{ maxWidth:780, margin:"0 auto" }}>
+
+      {/* ── API Lógike config ── */}
+      <div style={{ marginBottom:20, background:t.card, border:`1px solid ${t.border}`, borderRadius:14, overflow:"hidden" }}>
+        <button onClick={() => setShowApiConfig(v => !v)}
+          style={{ width:"100%", display:"flex", justifyContent:"space-between", alignItems:"center", padding:"14px 18px", background:"transparent", border:"none", cursor:"pointer", ...FF }}>
+          <div style={{ display:"flex", alignItems:"center", gap:10 }}>
+            <span style={{ fontSize:16 }}>🔌</span>
+            <span style={{ fontWeight:600, fontSize:14, color:t.text }}>API Lógike Admin</span>
+            {apiConfig?.apiKey
+              ? <span style={{ padding:"2px 8px", background:"#f0fdf4", border:"1px solid #86efac", borderRadius:20, fontSize:11, color:"#166534", fontWeight:600 }}>Configurada</span>
+              : <span style={{ padding:"2px 8px", background:dark?"#1e2a3a":"#f8fafc", border:`1px solid ${t.border}`, borderRadius:20, fontSize:11, color:t.textMuted }}>Não configurada</span>
+            }
+          </div>
+          <span style={{ color:t.textMuted, fontSize:12 }}>{showApiConfig ? "▲ Fechar" : "▼ Configurar"}</span>
+        </button>
+
+        {showApiConfig && (
+          <div style={{ padding:"0 18px 18px", borderTop:`1px solid ${t.border}` }}>
+            <p style={{ fontSize:12, color:t.textMuted, margin:"12px 0 16px" }}>
+              Configure a API do Lógike Admin para buscar automaticamente o texto dos comentários durante a importação.
+              O campo <b>Endpoint</b> usa <code style={{ background:dark?"#0f172a":"#f1f5f9", padding:"1px 5px", borderRadius:4 }}>{"{protocolo}"}</code> como placeholder.
+            </p>
+
+            <div style={{ display:"grid", gap:12 }}>
+              <div>
+                <label style={{ display:"block", fontSize:11, fontWeight:600, color:t.textMuted, marginBottom:5, textTransform:"uppercase", letterSpacing:"0.05em" }}>URL Base da API</label>
+                <input
+                  type="url"
+                  placeholder="https://api.logikeadmin.com.br/v1"
+                  value={apiLocal.baseUrl}
+                  onChange={e => setApiLocal(v => ({ ...v, baseUrl: e.target.value }))}
+                  style={{ width:"100%", boxSizing:"border-box", padding:"8px 12px", background:t.inputBg, border:`1px solid ${t.border}`, borderRadius:8, color:t.text, fontSize:13, ...FF }}
+                />
+              </div>
+              <div>
+                <label style={{ display:"block", fontSize:11, fontWeight:600, color:t.textMuted, marginBottom:5, textTransform:"uppercase", letterSpacing:"0.05em" }}>Chave de API (API Key)</label>
+                <input
+                  type="password"
+                  placeholder="Chave fornecida pelo Lógike Admin"
+                  value={apiLocal.apiKey}
+                  onChange={e => setApiLocal(v => ({ ...v, apiKey: e.target.value }))}
+                  style={{ width:"100%", boxSizing:"border-box", padding:"8px 12px", background:t.inputBg, border:`1px solid ${t.border}`, borderRadius:8, color:t.text, fontSize:13, ...FF }}
+                />
+              </div>
+              <div>
+                <label style={{ display:"block", fontSize:11, fontWeight:600, color:t.textMuted, marginBottom:5, textTransform:"uppercase", letterSpacing:"0.05em" }}>Endpoint (ajuste conforme documentação)</label>
+                <input
+                  type="text"
+                  placeholder="/{protocolo}"
+                  value={apiLocal.endpoint}
+                  onChange={e => setApiLocal(v => ({ ...v, endpoint: e.target.value }))}
+                  style={{ width:"100%", boxSizing:"border-box", padding:"8px 12px", background:t.inputBg, border:`1px solid ${t.border}`, borderRadius:8, color:t.text, fontSize:13, ...FF }}
+                />
+              </div>
+            </div>
+
+            <div style={{ display:"flex", gap:8, marginTop:14, alignItems:"center" }}>
+              <button
+                onClick={async () => {
+                  setApiSalvando(true);
+                  const cfg = { baseUrl: apiLocal.baseUrl.trim(), apiKey: apiLocal.apiKey.trim(), endpoint: apiLocal.endpoint.trim() || "/{protocolo}" };
+                  await saveSatApiConfig(cfg);
+                  setApiConfig(cfg);
+                  setApiSalvando(false);
+                }}
+                disabled={apiSalvando || !apiLocal.baseUrl || !apiLocal.apiKey}
+                style={{ padding:"8px 18px", background:"#6366f1", border:"none", borderRadius:8, color:"#fff", fontWeight:600, fontSize:13, cursor:"pointer", opacity:(!apiLocal.baseUrl||!apiLocal.apiKey||apiSalvando)?0.5:1, ...FF }}>
+                {apiSalvando ? "Salvando..." : "Salvar"}
+              </button>
+              <button
+                onClick={async () => {
+                  setApiTeste("testando");
+                  const cfg = { baseUrl: apiLocal.baseUrl.trim(), apiKey: apiLocal.apiKey.trim(), endpoint: apiLocal.endpoint.trim() || "/{protocolo}" };
+                  const r = await fetchComentarioLogike("TESTE", cfg);
+                  // Uma resposta qualquer (mesmo null) indica que a conexão chegou ao servidor
+                  // Um erro de rede (throw) indica falha
+                  setApiTeste("ok"); // Se chegou aqui, conexão funcionou (404 é normal para "TESTE")
+                }}
+                disabled={apiTeste === "testando" || !apiLocal.baseUrl || !apiLocal.apiKey}
+                style={{ padding:"8px 18px", background:t.btnSecBg, border:`1px solid ${t.border}`, borderRadius:8, color:t.btnSecText, fontWeight:600, fontSize:13, cursor:"pointer", opacity:(!apiLocal.baseUrl||!apiLocal.apiKey)?0.5:1, ...FF }}>
+                {apiTeste === "testando" ? "Testando..." : "Testar conexão"}
+              </button>
+              {apiTeste === "ok"  && <span style={{ fontSize:12, color:"#22c55e", fontWeight:600 }}>✓ Conexão estabelecida</span>}
+              {apiTeste === "erro" && <span style={{ fontSize:12, color:"#ef4444", fontWeight:600 }}>✗ Falha na conexão</span>}
+              {apiConfig?.apiKey && (
+                <button onClick={async () => { await saveSatApiConfig({}); setApiConfig({}); setApiLocal({ baseUrl:"", apiKey:"", endpoint:"/{protocolo}" }); setApiTeste(null); }}
+                  style={{ marginLeft:"auto", padding:"8px 14px", background:"#fef2f2", border:"1px solid #fecaca", borderRadius:8, color:"#dc2626", fontWeight:600, fontSize:12, cursor:"pointer", ...FF }}>
+                  Remover API
+                </button>
+              )}
+            </div>
+          </div>
+        )}
+      </div>
+
+      <div style={{ display:"flex", justifyContent:"space-between", alignItems:"flex-start", marginBottom:22 }}>
+        <div>
+          <h3 style={{ margin:0, fontWeight:700, fontSize:17, color:t.text }}>Importar Pesquisa de Satisfação</h3>
+          <p style={{ margin:"4px 0 0", fontSize:13, color:t.textMuted }}>Carregue a planilha .xlsx mensal com as avaliações dos clientes.</p>
+        </div>
+        <button onClick={() => setShowHistory(h => !h)}
+          style={{ padding:"7px 16px", background:t.btnSecBg, border:`1px solid ${t.border}`, borderRadius:8, cursor:"pointer", fontSize:13, color:t.btnSecText, fontWeight:600, ...FF, whiteSpace:"nowrap" }}>
+          {showHistory ? "Ocultar" : `📜 Histórico (${importacoes.length})`}
+        </button>
+      </div>
+
+      {showHistory && (
+        <div style={{ marginBottom:24, background:t.card, border:`1px solid ${t.border}`, borderRadius:14, overflow:"hidden" }}>
+          {importacoes.length === 0 ? (
+            <div style={{ textAlign:"center", padding:32, color:t.textMuted, fontSize:14 }}>Nenhuma importação realizada ainda.</div>
+          ) : (
+            <table style={{ width:"100%", borderCollapse:"collapse" }}>
+              <thead>
+                <tr style={{ background:dark?"#172032":"#f8fafc" }}>
+                  {["Competência","Registros","Respondidos","Importado em",""].map((h, i) => (
+                    <th key={i} style={{ padding:"9px 14px", textAlign:i>=1&&i<=3?"right":"left", fontSize:12, color:t.textMuted, fontWeight:600 }}>{h}</th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody>
+                {importacoes.map(imp => (
+                  <tr key={imp.key} style={{ borderTop:`1px solid ${t.border}` }}>
+                    <td style={{ padding:"9px 14px", fontWeight:600, color:t.text }}>{MN[imp.mes-1]} {imp.ano}</td>
+                    <td style={{ padding:"9px 14px", textAlign:"right", color:t.text }}>{imp.totalRegistros}</td>
+                    <td style={{ padding:"9px 14px", textAlign:"right", color:t.text }}>{imp.totalRespondidos}</td>
+                    <td style={{ padding:"9px 14px", textAlign:"right", color:t.textMuted, fontSize:12 }}>{imp.importadoEm ? new Date(imp.importadoEm).toLocaleDateString("pt-BR") : "—"}</td>
+                    <td style={{ padding:"9px 14px", textAlign:"right" }}>
+                      <button onClick={async () => {
+                        if (!window.confirm(`Remover ${MN[imp.mes-1]} ${imp.ano}?`)) return;
+                        await deleteSatImportacao(imp.mes, imp.ano);
+                        setImportacoes(v => v.filter(x => x.key !== imp.key));
+                      }} style={{ padding:"4px 10px", background:"#fef2f2", border:"1px solid #fecaca", borderRadius:6, cursor:"pointer", fontSize:11, color:"#dc2626", fontWeight:500 }}>
+                        🗑️ Remover
+                      </button>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          )}
+        </div>
+      )}
+
+      {(fase === "idle" || fase === "erro") && (
+        <div style={{ background:t.card, border:`1px solid ${t.border}`, borderRadius:16, padding:28 }}>
+          <div style={{ display:"flex", gap:12, alignItems:"flex-end", marginBottom:24, flexWrap:"wrap" }}>
+            <div>
+              <label style={{ display:"block", fontSize:11, fontWeight:600, color:t.textMuted, marginBottom:5, textTransform:"uppercase", letterSpacing:"0.05em" }}>Mês</label>
+              <select value={mesMes} onChange={e => setMesMes(+e.target.value)}
+                style={{ padding:"8px 12px", background:t.inputBg, border:`1px solid ${t.border}`, borderRadius:8, color:t.text, fontSize:14, cursor:"pointer", ...FF }}>
+                {MN.map((m, i) => <option key={i+1} value={i+1}>{m}</option>)}
+              </select>
+            </div>
+            <div>
+              <label style={{ display:"block", fontSize:11, fontWeight:600, color:t.textMuted, marginBottom:5, textTransform:"uppercase", letterSpacing:"0.05em" }}>Ano</label>
+              <select value={mesAno} onChange={e => setMesAno(+e.target.value)}
+                style={{ padding:"8px 12px", background:t.inputBg, border:`1px solid ${t.border}`, borderRadius:8, color:t.text, fontSize:14, cursor:"pointer", ...FF }}>
+                {[2024, 2025, 2026, 2027].map(y => <option key={y} value={y}>{y}</option>)}
+              </select>
+            </div>
+            {existeImportacao && (
+              <div style={{ padding:"8px 14px", background:"#fef3c7", border:"1px solid #fde68a", borderRadius:8, fontSize:12, color:"#92400e", fontWeight:600, alignSelf:"flex-end" }}>
+                ⚠️ Já importado — será substituído
+              </div>
+            )}
+          </div>
+
+          <div
+            onClick={() => fileRef.current?.click()}
+            onDragOver={e => { e.preventDefault(); e.currentTarget.style.borderColor="#6366f1"; e.currentTarget.style.background=dark?"#1a2040":"#eef2ff"; }}
+            onDragLeave={e => { e.currentTarget.style.borderColor=t.border; e.currentTarget.style.background="transparent"; }}
+            onDrop={e => { e.preventDefault(); e.currentTarget.style.borderColor=t.border; e.currentTarget.style.background="transparent"; const f=e.dataTransfer.files[0]; if(f) handleFile(f); }}
+            style={{ border:`2px dashed ${t.border}`, borderRadius:12, padding:"40px 24px", textAlign:"center", cursor:"pointer", transition:"all 0.2s" }}>
+            <div style={{ fontSize:38, marginBottom:10 }}>📂</div>
+            <div style={{ fontWeight:600, fontSize:15, color:t.text, marginBottom:6 }}>Clique para selecionar ou arraste o arquivo aqui</div>
+            <div style={{ fontSize:12, color:t.textMuted }}>Arquivos .xlsx ou .xls — a primeira linha deve ser o cabeçalho</div>
+            <input ref={fileRef} type="file" accept=".xlsx,.xls" style={{ display:"none" }} onChange={e => { if(e.target.files[0]) handleFile(e.target.files[0]); e.target.value=""; }} />
+          </div>
+
+          {fase === "erro" && (
+            <div style={{ marginTop:16, padding:"10px 14px", background:"#fef2f2", border:"1px solid #fecaca", borderRadius:8, color:"#dc2626", fontSize:13 }}>{erro}</div>
+          )}
+        </div>
+      )}
+
+      {fase === "preview" && parsedData && (() => {
+        const totalResp = parsedData.rows.filter(r => r.temResposta).length;
+        const totalSem  = parsedData.rows.length - totalResp;
+        return (
+          <div style={{ background:t.card, border:`1px solid ${t.border}`, borderRadius:16, padding:28 }}>
+            <div style={{ display:"flex", justifyContent:"space-between", alignItems:"flex-start", marginBottom:20, flexWrap:"wrap", gap:12 }}>
+              <div>
+                <h4 style={{ margin:0, fontWeight:700, fontSize:15, color:t.text }}>Pré-visualização — {MN[mesMes-1]} {mesAno}</h4>
+                <p style={{ margin:"3px 0 0", fontSize:12, color:t.textMuted }}>{arquivoNome}</p>
+              </div>
+              <div style={{ display:"flex", gap:16 }}>
+                {[{v:parsedData.rows.length,l:"Total",c:t.text},{v:totalResp,l:"Responderam",c:"#22c55e"},{v:totalSem,l:"Sem Resposta",c:"#f59e0b"}].map(({v,l,c}) => (
+                  <div key={l} style={{ textAlign:"center" }}>
+                    <div style={{ fontSize:22, fontWeight:800, color:c }}>{v}</div>
+                    <div style={{ fontSize:11, color:t.textMuted }}>{l}</div>
+                  </div>
+                ))}
+              </div>
+            </div>
+
+            {parsedData.unmatched.length > 0 && (
+              <div style={{ marginBottom:20, padding:"14px 16px", background:dark?"#1a2540":"#fff7ed", border:`1px solid ${dark?"#1e3a5f":"#fed7aa"}`, borderRadius:10 }}>
+                <div style={{ fontWeight:600, fontSize:13, color:dark?"#93c5fd":"#c2410c", marginBottom:12 }}>
+                  ⚠️ {parsedData.unmatched.length} nome(s) não encontrado(s) — vincule manualmente:
+                </div>
+                {parsedData.unmatched.map(nome => (
+                  <div key={nome} style={{ display:"flex", alignItems:"center", gap:8, marginBottom:8, flexWrap:"wrap" }}>
+                    <span style={{ fontSize:13, color:t.text, minWidth:160, fontStyle:"italic" }}>"{nome}"</span>
+                    <span style={{ fontSize:13, color:t.textMuted }}>→</span>
+                    <select value={mapeamentosLocais[nome] || ""}
+                      onChange={e => setMapeamentosLocais(m => ({ ...m, [nome]: e.target.value || null }))}
+                      style={{ flex:1, minWidth:160, padding:"6px 10px", background:t.inputBg, border:`1px solid ${t.border}`, borderRadius:7, color:t.text, fontSize:13, ...FF }}>
+                      <option value="">— Não vincular —</option>
+                      {(employees||[]).map(emp => <option key={emp.id} value={emp.id}>{emp.name}</option>)}
+                    </select>
+                  </div>
+                ))}
+              </div>
+            )}
+
+            {Object.values(parsedData.matchedNames).some(Boolean) && (
+              <div style={{ marginBottom:20 }}>
+                <div style={{ fontSize:11, fontWeight:600, color:t.textMuted, marginBottom:8, textTransform:"uppercase", letterSpacing:"0.05em" }}>Atendentes identificados</div>
+                <div style={{ display:"flex", flexWrap:"wrap", gap:6 }}>
+                  {[...new Set(Object.values(parsedData.matchedNames).filter(Boolean))].map(id => {
+                    const emp = (employees||[]).find(e => e.id === id);
+                    return (
+                      <span key={id} style={{ padding:"3px 10px", background:dark?"#1a2e1a":"#f0fdf4", border:"1px solid #86efac", borderRadius:20, fontSize:12, color:dark?"#86efac":"#166534" }}>
+                        ✓ {emp?.name || id}
+                      </span>
+                    );
+                  })}
+                </div>
+              </div>
+            )}
+
+            <div style={{ display:"flex", gap:10, justifyContent:"flex-end" }}>
+              <button onClick={resetar}
+                style={{ padding:"9px 20px", background:t.btnSecBg, border:`1px solid ${t.border}`, borderRadius:9, cursor:"pointer", fontSize:14, color:t.btnSecText, fontWeight:600, ...FF }}>
+                Cancelar
+              </button>
+              <button onClick={confirmar} disabled={confirmando}
+                style={{ padding:"9px 24px", background:"#6366f1", border:"none", borderRadius:9, color:"#fff", fontWeight:700, fontSize:14, cursor:confirmando?"wait":"pointer", opacity:confirmando?0.7:1, ...FF }}>
+                {enrichProgress
+                  ? `Buscando comentários… ${enrichProgress.done}/${enrichProgress.total}`
+                  : confirmando ? "Salvando..."
+                  : existeImportacao ? "Substituir e Salvar" : "Confirmar Importação"}
+              </button>
+            </div>
+            {apiConfig?.apiKey && (() => {
+              const comCount = parsedData.rows.filter(r => r.temComentarioApi && r.protocolo).length;
+              return comCount > 0 ? (
+                <p style={{ margin:"10px 0 0", fontSize:12, color:t.textMuted, textAlign:"right" }}>
+                  🔌 {comCount} comentário(s) serão buscados via API Lógike durante a importação
+                </p>
+              ) : null;
+            })()}
+          </div>
+        );
+      })()}
+
+      {fase === "concluido" && (
+        <div style={{ background:t.card, border:`1px solid ${t.border}`, borderRadius:16, padding:48, textAlign:"center" }}>
+          <div style={{ fontSize:52, marginBottom:12 }}>✅</div>
+          <h4 style={{ margin:"0 0 8px", fontWeight:700, fontSize:18, color:t.text }}>Importação concluída!</h4>
+          <p style={{ color:t.textMuted, fontSize:14, margin:"0 0 24px" }}>
+            {MN[mesMes-1]} {mesAno} — {parsedData?.rows.length} registros · {parsedData?.rows.filter(r=>r.temResposta).length} respondidos
+          </p>
+          <button onClick={resetar}
+            style={{ padding:"10px 24px", background:"#6366f1", border:"none", borderRadius:9, color:"#fff", fontWeight:700, fontSize:14, cursor:"pointer", ...FF }}>
+            Nova Importação
+          </button>
+        </div>
+      )}
+    </div>
+  );
+}
+
 // ── Admin Panel ───────────────────────────────────────────────────────
 
 function AdminPanel({ onBack, onGestao }) {
@@ -768,14 +1880,20 @@ function AdminPanel({ onBack, onGestao }) {
   const [confirmId,   setConfirmId]   = useState(null);
   const [confirmType, setConfirmType] = useState(null);
   const [toast,       setToast]       = useState("");
+  const [sigs,        setSigs]        = useState({});
+  const [carimboDB,   setCarimboDB]   = useState(null);
+  const [sigsLoaded,  setSigsLoaded]  = useState(false);
+  const [sigSaving,   setSigSaving]   = useState(null);
 
   const showToast = msg => { setToast(msg); setTimeout(()=>setToast(""), 3000); };
 
   useEffect(() => {
     (async () => {
-      const [emps, pgs, tps, depts] = await Promise.all([loadEmployees(), loadPages(), loadTipos(), loadDepartments()]);
+      const [emps, pgs, tps, depts, allSigs] = await Promise.all([loadEmployees(), loadPages(), loadTipos(), loadDepartments(), loadAllSignatures()]);
       const sorted = [...pgs].sort((a,b)=>b.year!==a.year?b.year-a.year:b.month-a.month);
       setEmployees(emps); setPages(sorted); setTipos(tps); setDepartments(depts);
+      const { carimbo: car, ...restSigs } = allSigs;
+      setSigs(restSigs); setCarimboDB(car || null); setSigsLoaded(true);
       const tpMap = Object.fromEntries(tps.map(tp=>[tp.label,tp]));
       const normStr = s=>(s||"").toLowerCase().normalize("NFD").replace(/[̀-ͯ]/g,"");
       const isOrgao = tipo => { const tp=tpMap[tipo]; return normStr(tp?.department).includes("orgao")||normStr(tipo).includes("orgao"); };
@@ -867,7 +1985,10 @@ function AdminPanel({ onBack, onGestao }) {
   };
 
   const tabBtn = (key, label) => (
-    <button onClick={()=>setTab(key)} style={{ padding:"10px 22px", border:"none", borderRadius:10, fontWeight:700, fontSize:14, cursor:"pointer", ...FF, background: tab===key ? t.tabActiveBg : "transparent", color: tab===key ? t.tabActiveText : t.tabInactiveText, transition:"all 0.15s" }}>
+    <button onClick={()=>setTab(key)} style={{ padding:"8px 16px", border:"none", borderRadius:8, fontWeight:600, fontSize:13.5, cursor:"pointer", ...FF,
+      background: tab===key ? t.tabActiveBg : "transparent",
+      color: tab===key ? t.tabActiveText : t.tabInactiveText,
+      transition:"all 0.15s" }}>
       {label}
     </button>
   );
@@ -887,10 +2008,10 @@ function AdminPanel({ onBack, onGestao }) {
         </div>
         <div style={{ display:"flex", alignItems:"center", gap:14 }}>
           <DarkToggle />
-          {tab === "planilhas" && <button onClick={()=>setModal({mode:"add",type:"page"})} style={{ padding:"8px 18px", background:"linear-gradient(135deg,#0ea5e9,#6366f1)", border:"none", borderRadius:9, color:"#fff", fontWeight:700, fontSize:14, cursor:"pointer", ...FF }}>+ Nova Planilha</button>}
-          {tab === "atendentes" && <button onClick={()=>setModal({mode:"add",type:"emp"})}  style={{ padding:"8px 18px", background:"linear-gradient(135deg,#0ea5e9,#6366f1)", border:"none", borderRadius:9, color:"#fff", fontWeight:700, fontSize:14, cursor:"pointer", ...FF }}>+ Novo Atendente</button>}
-          {tab === "tipos"         && <button onClick={()=>setModal({mode:"add",type:"tipo"})} style={{ padding:"8px 18px", background:"linear-gradient(135deg,#0ea5e9,#6366f1)", border:"none", borderRadius:9, color:"#fff", fontWeight:700, fontSize:14, cursor:"pointer", ...FF }}>+ Novo Tipo</button>}
-          {tab === "departamentos" && <button onClick={()=>setModal({mode:"add",type:"dept"})} style={{ padding:"8px 18px", background:"linear-gradient(135deg,#0ea5e9,#6366f1)", border:"none", borderRadius:9, color:"#fff", fontWeight:700, fontSize:14, cursor:"pointer", ...FF }}>+ Novo Departamento</button>}
+          {tab === "planilhas" && <button onClick={()=>setModal({mode:"add",type:"page"})} style={{ padding:"8px 16px", background:"#6366f1", border:"none", borderRadius:8, color:"#fff", fontWeight:600, fontSize:13.5, cursor:"pointer", ...FF }}>Nova Planilha</button>}
+          {tab === "atendentes" && <button onClick={()=>setModal({mode:"add",type:"emp"})}  style={{ padding:"8px 16px", background:"#6366f1", border:"none", borderRadius:8, color:"#fff", fontWeight:600, fontSize:13.5, cursor:"pointer", ...FF }}>Novo Atendente</button>}
+          {tab === "tipos"         && <button onClick={()=>setModal({mode:"add",type:"tipo"})} style={{ padding:"8px 16px", background:"#6366f1", border:"none", borderRadius:8, color:"#fff", fontWeight:600, fontSize:13.5, cursor:"pointer", ...FF }}>Novo Tipo</button>}
+          {tab === "departamentos" && <button onClick={()=>setModal({mode:"add",type:"dept"})} style={{ padding:"8px 16px", background:"#6366f1", border:"none", borderRadius:8, color:"#fff", fontWeight:600, fontSize:13.5, cursor:"pointer", ...FF }}>Novo Departamento</button>}
         </div>
       </div>
 
@@ -899,6 +2020,8 @@ function AdminPanel({ onBack, onGestao }) {
         {tabBtn("atendentes",    "👥  Atendentes")}
         {tabBtn("tipos",         "🏷️  Tipos")}
         {tabBtn("departamentos", "🏢  Departamentos")}
+        {tabBtn("assinaturas",   "✍️  Assinaturas")}
+        {tabBtn("satisfacao",    "⭐  Satisfação")}
         <button onClick={onGestao} style={{ padding:"10px 22px", border:"none", borderRadius:10, fontWeight:700, fontSize:14, cursor:"pointer", ...FF, background:"transparent", color:"#60a5fa", transition:"all 0.15s" }}>📊  Gestão</button>
         <span style={{ marginLeft:"auto", fontSize:12, color:t.textMuted }}>
           {tab==="planilhas"     && `${pages.length} planilha${pages.length!==1?"s":""}`}
@@ -918,15 +2041,15 @@ function AdminPanel({ onBack, onGestao }) {
                 <div style={{ fontSize:56, marginBottom:16 }}>📋</div>
                 <div style={{ fontSize:18, fontWeight:700, color:t.text, marginBottom:8 }}>Nenhuma planilha criada</div>
                 <div style={{ fontSize:14, color:t.textMuted, marginBottom:24 }}>Crie a primeira planilha — ela ficará visível para todos os atendentes.</div>
-                <button onClick={()=>setModal({mode:"add",type:"page"})} style={{ padding:"12px 28px", background:"linear-gradient(135deg,#0ea5e9,#6366f1)", border:"none", borderRadius:12, color:"#fff", fontWeight:700, fontSize:15, cursor:"pointer", ...FF }}>+ Criar primeira planilha</button>
+                <button onClick={()=>setModal({mode:"add",type:"page"})} style={{ padding:"12px 28px", background:"#6366f1", border:"none", borderRadius:12, color:"#fff", fontWeight:700, fontSize:15, cursor:"pointer", ...FF }}>+ Criar primeira planilha</button>
               </div>
             ) : (
               <div style={{ display:"grid", gridTemplateColumns:"repeat(auto-fill, minmax(300px, 1fr))", gap:16 }}>
                 {pages.map(pg => (
                   <PageCard key={pg.id} pg={pg} employees={employees} cnt={counts[pg.id]||{total:0,resolved:0,inProgress:0,opAbertos:0}} isCurrentMonth={pg.month===cur.month&&pg.year===cur.year} onClick={()=>{}}
                     actions={<>
-                      <button onClick={()=>setModal({mode:"edit",type:"page",page:pg})} style={{ background:t.btnSecBg, border:`1px solid ${t.border}`, borderRadius:8, padding:"5px 9px", cursor:"pointer", fontSize:13 }}>✏️</button>
-                      <button onClick={()=>{setConfirmId(pg.id);setConfirmType("page");}} style={{ background:"#fef2f2", border:"1px solid #fecaca", borderRadius:8, padding:"5px 9px", cursor:"pointer", fontSize:13 }}>🗑️</button>
+                      <button onClick={()=>setModal({mode:"edit",type:"page",page:pg})} style={{ background:t.btnSecBg, border:`1px solid ${t.border}`, borderRadius:7, padding:"5px 10px", cursor:"pointer", fontSize:12, color:t.btnSecText, fontWeight:500 }}>✏️</button>
+                      <button onClick={()=>{setConfirmId(pg.id);setConfirmType("page");}} style={{ background:"#fef2f2", border:"1px solid #fecaca", borderRadius:7, padding:"5px 10px", cursor:"pointer", fontSize:12, color:"#dc2626", fontWeight:500 }}>🗑️</button>
                     </>}
                   />
                 ))}
@@ -937,7 +2060,7 @@ function AdminPanel({ onBack, onGestao }) {
               <div style={{ textAlign:"center", padding:80, background:t.card, borderRadius:18, border:`1px solid ${t.border}` }}>
                 <div style={{ fontSize:52, marginBottom:14 }}>👥</div>
                 <div style={{ fontSize:17, fontWeight:700, color:t.text, marginBottom:8 }}>Nenhum atendente cadastrado</div>
-                <button onClick={()=>setModal({mode:"add",type:"emp"})} style={{ marginTop:8, padding:"10px 24px", background:"linear-gradient(135deg,#0ea5e9,#6366f1)", border:"none", borderRadius:10, color:"#fff", fontWeight:700, fontSize:14, cursor:"pointer", ...FF }}>+ Criar primeiro atendente</button>
+                <button onClick={()=>setModal({mode:"add",type:"emp"})} style={{ marginTop:8, padding:"10px 24px", background:"#6366f1", border:"none", borderRadius:10, color:"#fff", fontWeight:700, fontSize:14, cursor:"pointer", ...FF }}>+ Criar primeiro atendente</button>
               </div>
             ) : (
               <div style={{ display:"grid", gridTemplateColumns:"repeat(auto-fill, minmax(290px, 1fr))", gap:14 }}>
@@ -964,7 +2087,7 @@ function AdminPanel({ onBack, onGestao }) {
               <div style={{ textAlign:"center", padding:80, background:t.card, borderRadius:18, border:`1px solid ${t.border}` }}>
                 <div style={{ fontSize:52, marginBottom:14 }}>🏷️</div>
                 <div style={{ fontSize:17, fontWeight:700, color:t.text, marginBottom:8 }}>Nenhum tipo cadastrado</div>
-                <button onClick={()=>setModal({mode:"add",type:"tipo"})} style={{ marginTop:8, padding:"10px 24px", background:"linear-gradient(135deg,#0ea5e9,#6366f1)", border:"none", borderRadius:10, color:"#fff", fontWeight:700, fontSize:14, cursor:"pointer", ...FF }}>+ Criar primeiro tipo</button>
+                <button onClick={()=>setModal({mode:"add",type:"tipo"})} style={{ marginTop:8, padding:"10px 24px", background:"#6366f1", border:"none", borderRadius:10, color:"#fff", fontWeight:700, fontSize:14, cursor:"pointer", ...FF }}>+ Criar primeiro tipo</button>
               </div>
             ) : (
               (() => {
@@ -988,8 +2111,8 @@ function AdminPanel({ onBack, onGestao }) {
                             <div key={tp.id} style={{ background:t.card, border:`1px solid ${t.border}`, borderRadius:14, padding:"14px 16px", display:"flex", alignItems:"center", gap:12 }}>
                               <span style={{ background:tp.bg, color:tp.text, padding:"4px 12px", borderRadius:20, fontSize:12, fontWeight:700, whiteSpace:"nowrap" }}>{tp.label}</span>
                               <div style={{ flex:1 }} />
-                              <button onClick={()=>setModal({mode:"edit",type:"tipo",tipo:tp})} style={{ background:t.btnSecBg, border:`1px solid ${t.border}`, borderRadius:8, padding:"5px 9px", cursor:"pointer", fontSize:13 }}>✏️</button>
-                              <button onClick={()=>{setConfirmId(tp.id);setConfirmType("tipo");}} style={{ background:"#fef2f2", border:"1px solid #fecaca", borderRadius:8, padding:"5px 9px", cursor:"pointer", fontSize:13 }}>🗑️</button>
+                              <button onClick={()=>setModal({mode:"edit",type:"tipo",tipo:tp})} style={{ background:t.btnSecBg, border:`1px solid ${t.border}`, borderRadius:7, padding:"5px 10px", cursor:"pointer", fontSize:12, color:t.btnSecText, fontWeight:500 }}>✏️</button>
+                              <button onClick={()=>{setConfirmId(tp.id);setConfirmType("tipo");}} style={{ background:"#fef2f2", border:"1px solid #fecaca", borderRadius:7, padding:"5px 10px", cursor:"pointer", fontSize:12, color:"#dc2626", fontWeight:500 }}>🗑️</button>
                             </div>
                           ))}
                         </div>
@@ -999,13 +2122,69 @@ function AdminPanel({ onBack, onGestao }) {
                 );
               })()
             )
+          ) : tab === "assinaturas" ? (
+            // ── Assinaturas tab ────────────────────────────────────
+            !sigsLoaded ? (
+              <div style={{ textAlign:"center", padding:80, color:t.textMuted }}>Carregando assinaturas...</div>
+            ) : (
+              <div style={{ display:"flex", flexDirection:"column", gap:20 }}>
+
+                {/* Carimbo da empresa */}
+                <div style={{ background:t.card, border:`1px solid ${t.border}`, borderRadius:18, padding:"22px 24px" }}>
+                  <div style={{ fontWeight:800, fontSize:15, color:t.text, marginBottom:4 }}>🏷️  Carimbo da Empresa</div>
+                  <div style={{ fontSize:12, color:t.textMuted, marginBottom:16 }}>Aparece em todos os pontos assinados pelos colaboradores.</div>
+                  <SigUploadRow
+                    current={carimboDB}
+                    saving={sigSaving === "carimbo"}
+                    keepAlpha
+                    onUpload={async b64 => { setSigSaving("carimbo"); const ok = await saveSignature("carimbo", b64); setSigSaving(null); if (ok) { setCarimboDB(b64); showToast("✓  Carimbo salvo."); } else { showToast("❌  Erro ao salvar — tente uma imagem menor."); } }}
+                    onDelete={async () => { setSigSaving("carimbo"); await deleteSignature("carimbo"); setCarimboDB(null); setSigSaving(null); showToast("🗑️  Carimbo removido."); }}
+                    t={t}
+                  />
+                  {!carimboDB && <div style={{ fontSize:12, color:"#d97706", marginTop:10 }}>⚠️  Nenhum carimbo cadastrado — os pontos serão assinados sem carimbo.</div>}
+                </div>
+
+                {/* Assinaturas dos colaboradores */}
+                <div style={{ background:t.card, border:`1px solid ${t.border}`, borderRadius:18, padding:"22px 24px" }}>
+                  <div style={{ display:"flex", alignItems:"center", justifyContent:"space-between", marginBottom:4 }}>
+                    <div style={{ fontWeight:800, fontSize:15, color:t.text }}>✍️  Assinaturas dos Colaboradores</div>
+                    <span style={{ fontSize:12, color:t.textMuted }}>{Object.keys(sigs).length}/{employees.length} configuradas</span>
+                  </div>
+                  <div style={{ fontSize:12, color:t.textMuted, marginBottom:16 }}>Faça upload do PNG da assinatura de cada colaborador.</div>
+                  <div style={{ display:"flex", flexDirection:"column", gap:10 }}>
+                    {employees.map(emp => (
+                      <div key={emp.id} style={{ display:"flex", alignItems:"center", gap:14, padding:"12px 16px", borderRadius:12, border:`1px solid ${sigs[emp.id]?"#86efac":t.border}`, background:sigs[emp.id]?"#f0fdf4":t.pageBg, flexWrap:"wrap" }}>
+                        <Avatar name={emp.name} color={emp.color||"#6366f1"} size={36} />
+                        <div style={{ flex:1, minWidth:120 }}>
+                          <div style={{ fontWeight:700, fontSize:14, color:t.text }}>{emp.name}</div>
+                          <div style={{ fontSize:11, color:t.textMuted }}>{emp.department||"—"}</div>
+                        </div>
+                        <span style={{ fontSize:11, fontWeight:600, color:sigs[emp.id]?"#16a34a":"#d97706", flexShrink:0 }}>
+                          {sigs[emp.id] ? "✅ Configurada" : "⏳ Pendente"}
+                        </span>
+                        <SigUploadRow
+                          current={sigs[emp.id]||null}
+                          saving={sigSaving === emp.id}
+                          onUpload={async b64 => { setSigSaving(emp.id); const ok = await saveSignature(emp.id, b64); setSigSaving(null); if (ok) { setSigs(s=>({...s,[emp.id]:b64})); showToast(`✓  Assinatura de ${emp.name} salva.`); } else { showToast(`❌  Erro ao salvar assinatura de ${emp.name}.`); } }}
+                          onDelete={async () => { setSigSaving(emp.id); await deleteSignature(emp.id); setSigs(s=>{const c={...s};delete c[emp.id];return c;}); setSigSaving(null); showToast(`🗑️  Assinatura de ${emp.name} removida.`); }}
+                          t={t}
+                        />
+                      </div>
+                    ))}
+                  </div>
+                </div>
+
+              </div>
+            )
+          ) : tab === "satisfacao" ? (
+            <SatisfacaoAdminTab employees={employees} />
           ) : (
             // ── Departamentos tab ──────────────────────────────────
             departments.length === 0 ? (
               <div style={{ textAlign:"center", padding:80, background:t.card, borderRadius:18, border:`1px solid ${t.border}` }}>
                 <div style={{ fontSize:52, marginBottom:14 }}>🏢</div>
                 <div style={{ fontSize:17, fontWeight:700, color:t.text, marginBottom:8 }}>Nenhum departamento cadastrado</div>
-                <button onClick={()=>setModal({mode:"add",type:"dept"})} style={{ marginTop:8, padding:"10px 24px", background:"linear-gradient(135deg,#0ea5e9,#6366f1)", border:"none", borderRadius:10, color:"#fff", fontWeight:700, fontSize:14, cursor:"pointer", ...FF }}>+ Criar primeiro departamento</button>
+                <button onClick={()=>setModal({mode:"add",type:"dept"})} style={{ marginTop:8, padding:"10px 24px", background:"#6366f1", border:"none", borderRadius:10, color:"#fff", fontWeight:700, fontSize:14, cursor:"pointer", ...FF }}>+ Criar primeiro departamento</button>
               </div>
             ) : (
               <div style={{ display:"grid", gridTemplateColumns:"repeat(auto-fill, minmax(260px, 1fr))", gap:12 }}>
@@ -1018,8 +2197,8 @@ function AdminPanel({ onBack, onGestao }) {
                         {tipos.filter(tp=>tp.department===dept.name).length} tipo(s) · {employees.filter(e=>e.department===dept.name).length} atendente(s)
                       </div>
                     </div>
-                    <button onClick={()=>setModal({mode:"edit",type:"dept",dept})} style={{ background:t.btnSecBg, border:`1px solid ${t.border}`, borderRadius:8, padding:"5px 9px", cursor:"pointer", fontSize:13, flexShrink:0 }}>✏️</button>
-                    <button onClick={()=>{setConfirmId(dept.id);setConfirmType("dept");}} style={{ background:"#fef2f2", border:"1px solid #fecaca", borderRadius:8, padding:"5px 9px", cursor:"pointer", fontSize:13, flexShrink:0 }}>🗑️</button>
+                    <button onClick={()=>setModal({mode:"edit",type:"dept",dept})} style={{ background:t.btnSecBg, border:`1px solid ${t.border}`, borderRadius:7, padding:"5px 10px", cursor:"pointer", fontSize:12, color:t.btnSecText, fontWeight:500, flexShrink:0 }}>✏️</button>
+                    <button onClick={()=>{setConfirmId(dept.id);setConfirmType("dept");}} style={{ background:"#fef2f2", border:"1px solid #fecaca", borderRadius:7, padding:"5px 10px", cursor:"pointer", fontSize:12, color:"#dc2626", fontWeight:500, flexShrink:0 }}>🗑️</button>
                   </div>
                 ))}
                 <div onClick={()=>setModal({mode:"add",type:"dept"})}
@@ -1128,9 +2307,9 @@ function DatePicker({ value, pageMonth, pageYear, onChange, inputStyle }) {
 
 function RecordModal({ record, employees, tipos=[], pageDepartment="Geral", pageMonth, pageYear, onSave, onClose, currentUser }) {
   const { t } = useTheme();
-  const inp = { width:"100%", padding:"9px 12px", border:`1.5px solid ${t.inputBorder}`, borderRadius:9, fontSize:14, color:t.inputText, outline:"none", boxSizing:"border-box", background:t.inputBg, ...FF };
-  const sel = { ...inp, cursor:"pointer" };
-  const bS  = { flex:1, padding:12, background:t.btnSecBg, border:"none", borderRadius:10, color:t.btnSecText, fontWeight:600, fontSize:14, cursor:"pointer", ...FF };
+  const inp = INP(t);
+  const sel = SEL(t);
+  const bS  = { ...BTN_SEC(t), flex:1 };
 
   const isNew = !record?.id;
   const defaultAtendente = isNew ? (currentUser?.id || employees[0]?.id || "") : (record?.atendenteId || "");
@@ -1156,7 +2335,7 @@ function RecordModal({ record, employees, tipos=[], pageDepartment="Geral", page
     <ModalShell
       title={record?.id ? "✏️  Editar Atendimento" : "➕  Novo Atendimento"}
       onClose={onClose}
-      footer={<div style={{ display:"flex", gap:12 }}><button onClick={onClose} style={bS}>Cancelar</button><button onClick={handleSave} style={btnP(!ok)}>{record?.id?"Salvar Alterações":"Registrar Atendimento"}</button></div>}
+      footer={<><button onClick={onClose} style={bS}>Cancelar</button><button onClick={handleSave} style={btnP(!ok)}>{record?.id?"Salvar Alterações":"Registrar Atendimento"}</button></>}
     >
       <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr", gap:"0 16px" }}>
         <Field label="Status">
@@ -1269,8 +2448,8 @@ function RecordModal({ record, employees, tipos=[], pageDepartment="Geral", page
 
 function AgendaModal({ record, onSave, onClose }) {
   const { t } = useTheme();
-  const inp = { width:"100%", padding:"9px 12px", border:`1.5px solid ${t.inputBorder}`, borderRadius:9, fontSize:14, color:t.inputText, outline:"none", boxSizing:"border-box", background:t.inputBg, ...FF };
-  const bS  = { padding:"11px 20px", background:t.btnSecBg, border:"none", borderRadius:10, color:t.btnSecText, fontWeight:600, fontSize:14, cursor:"pointer", ...FF };
+  const inp = INP(t);
+  const bS  = BTN_SEC(t);
   const ag  = record.agendamento || {};
   const [titulo,    setTitulo]    = useState(ag.titulo    || "");
   const [dataHora,  setDataHora]  = useState(ag.dataHora  || "");
@@ -1286,7 +2465,7 @@ function AgendaModal({ record, onSave, onClose }) {
       footer={
         <div style={{ display:"flex", gap:8, flexWrap:"wrap" }}>
           <button onClick={onClose} style={bS}>Fechar</button>
-          {!ag.concluido && <button onClick={complete} style={{ padding:"11px 20px", background:"linear-gradient(135deg,#16a34a,#15803d)", border:"none", borderRadius:10, color:"#fff", fontWeight:700, fontSize:14, cursor:"pointer", ...FF }}>✅ Concluir</button>}
+          {!ag.concluido && <button onClick={complete} style={{ padding:"10px 18px", background:"#16a34a", border:"none", borderRadius:8, color:"#fff", fontWeight:600, fontSize:14, cursor:"pointer", ...FF }}>Concluir</button>}
           <button onClick={save} style={btnP(false)}>Salvar</button>
         </div>
       }
@@ -1366,14 +2545,293 @@ function PresenceBar({ employees }) {
   );
 }
 
+// ── Satisfação — Employee view ────────────────────────────────────────
+
+function SatisfacaoView({ user, onBack }) {
+  const { t, dark } = useTheme();
+  const [importacoes, setImportacoes] = useState([]);
+  const [loading,     setLoading]     = useState(true);
+  const [periodo,     setPeriodo]     = useState("30d");
+  const [detalhe,     setDetalhe]     = useState(null);
+
+  const MN = ["Janeiro","Fevereiro","Março","Abril","Maio","Junho","Julho","Agosto","Setembro","Outubro","Novembro","Dezembro"];
+
+  useEffect(() => {
+    loadSatImportacoes().then(imps => { setImportacoes(imps); setLoading(false); });
+  }, []);
+
+  const now = new Date();
+  const fim = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 23, 59, 59);
+  let inicio;
+  if (periodo === "7d")       inicio = new Date(now.getTime() - 6 * 86400000);
+  else if (periodo === "30d") inicio = new Date(now.getTime() - 29 * 86400000);
+  else if (periodo === "90d") inicio = new Date(now.getTime() - 89 * 86400000);
+  else                        inicio = new Date(now.getFullYear(), 0, 1);
+
+  const m = !loading && importacoes.length ? satCalcMetricas(importacoes, user.id, inicio, fim) : null;
+
+  const scoreColor = v => {
+    if (v === null || v === undefined) return t.textMuted;
+    if (v >= 4.5) return "#22c55e";
+    if (v >= 4.0) return "#4ade80";
+    if (v >= 3.5) return "#facc15";
+    if (v >= 3.0) return "#fb923c";
+    return "#ef4444";
+  };
+  const scoreLabel = v => {
+    if (v === null || v === undefined) return "";
+    if (v >= 4.5) return "Excelente";
+    if (v >= 4.0) return "Bom";
+    if (v >= 3.5) return "Regular";
+    if (v >= 3.0) return "Baixo";
+    return "Crítico";
+  };
+
+  const DIST_LABELS = ["Muito Satisfeito","Satisfeito","Indiferente","Insatisfeito","Muito Insatisfeito"];
+  const DIST_KEYS   = ["muitoSatisfeito","satisfeito","indiferente","insatisfeito","muitoInsatisfeito"];
+  const DIST_COLORS = ["#22c55e","#86efac","#94a3b8","#fb923c","#ef4444"];
+
+  const hist = m?.hist || [];
+  const W = 560, H = 100, PAD = 18;
+  const histPoints = hist.length >= 2 ? (() => {
+    const vals = hist.map(h => h.media);
+    const minV = Math.max(0, Math.min(...vals) - 0.3);
+    const maxV = Math.min(5, Math.max(...vals) + 0.3);
+    const scaleX = i => PAD + (i / (hist.length - 1)) * (W - PAD * 2);
+    const scaleY = v => PAD + (1 - (v - minV) / (maxV - minV || 1)) * (H - PAD * 2);
+    const yRef = scaleY(4);
+    return { pts: hist.map((h, i) => ({ x: scaleX(i), y: scaleY(h.media), ...h })), yRef, minV, maxV };
+  })() : null;
+
+  return (
+    <div style={{ minHeight:"100vh", background:t.pageBg, ...FF }}>
+      <div style={{ background:t.header, padding:"0 24px", display:"flex", alignItems:"center", justifyContent:"space-between", height:58, position:"sticky", top:0, zIndex:50, boxShadow:"0 2px 12px rgba(0,0,0,0.4)" }}>
+        <div style={{ display:"flex", alignItems:"center", gap:14 }}>
+          <button onClick={onBack} style={{ background:"rgba(255,255,255,0.08)", border:"1px solid rgba(255,255,255,0.12)", color:"#94a3b8", borderRadius:8, padding:"6px 14px", cursor:"pointer", fontSize:13, ...FF }}>← Voltar</button>
+          <span style={{ color:"#f8fafc", fontWeight:800, fontSize:16 }}>⭐ Satisfação dos Clientes</span>
+        </div>
+        <div style={{ display:"flex", alignItems:"center", gap:12 }}>
+          <DarkToggle />
+          <div style={{ display:"flex", alignItems:"center", gap:8 }}>
+            <Avatar name={user.name} color={user.color||"#6366f1"} size={28} />
+            <span style={{ color:"#cbd5e1", fontWeight:500, fontSize:13 }}>{user.name}</span>
+          </div>
+        </div>
+      </div>
+
+      <div style={{ maxWidth:900, margin:"0 auto", padding:"28px 24px 60px" }}>
+        <div style={{ display:"flex", gap:6, marginBottom:28, flexWrap:"wrap" }}>
+          {[["7d","7 dias"],["30d","30 dias"],["90d","90 dias"],["ano","Este ano"]].map(([k, l]) => (
+            <button key={k} onClick={() => setPeriodo(k)}
+              style={{ padding:"7px 16px", borderRadius:8, border:`1px solid ${periodo===k?"#6366f1":t.border}`, background:periodo===k?"#6366f1":"transparent", color:periodo===k?"#fff":t.textSub, fontWeight:600, fontSize:13, cursor:"pointer", ...FF }}>
+              {l}
+            </button>
+          ))}
+        </div>
+
+        {loading ? (
+          <div style={{ textAlign:"center", padding:80, color:t.textMuted }}>Carregando...</div>
+        ) : !m || m.totalEnviadas === 0 ? (
+          <div style={{ textAlign:"center", padding:80, background:t.card, borderRadius:18, border:`1px solid ${t.border}` }}>
+            <div style={{ fontSize:52, marginBottom:14 }}>📊</div>
+            <div style={{ fontSize:17, fontWeight:700, color:t.text, marginBottom:8 }}>Ainda não existem avaliações neste período</div>
+            <div style={{ fontSize:13, color:t.textMuted }}>Os dados de satisfação são importados mensalmente pelo administrador.</div>
+          </div>
+        ) : (
+          <>
+            <div style={{ display:"grid", gridTemplateColumns:"repeat(auto-fill, minmax(200px, 1fr))", gap:14, marginBottom:22 }}>
+              {[
+                { icon:"⭐", label:"Satisfação Geral",    value:m.geral !== null ? m.geral.toFixed(1) : "—",         sub:m.geral !== null ? scoreLabel(m.geral) : "",              color:scoreColor(m.geral) },
+                { icon:"💬", label:"Avaliações recebidas", value:m.totalRespostas,                                    sub:`de ${m.totalEnviadas} enviadas`,                         color:t.text },
+                { icon:"📈", label:"% Satisfeito ou mais",value:m.pctPos !== null ? m.pctPos + "%" : "—",            sub:"Satisfeito + Muito Satisfeito",                          color:m.pctPos!==null&&m.pctPos>=75?"#22c55e":m.pctPos!==null&&m.pctPos>=50?"#facc15":"#ef4444" },
+                { icon:"📩", label:"Taxa de resposta",     value:m.totalEnviadas>0 ? m.taxaResposta + "%" : "—",     sub:"Respondidas / total enviadas",                           color:t.text },
+              ].map(({ icon, label, value, sub, color }) => (
+                <div key={label} style={{ background:t.card, border:`1px solid ${t.border}`, borderRadius:14, padding:"18px 20px" }}>
+                  <div style={{ fontSize:12, color:t.textMuted, fontWeight:500, marginBottom:8 }}>{icon} {label}</div>
+                  <div style={{ fontSize:28, fontWeight:800, color, lineHeight:1 }}>{value}</div>
+                  {sub && <div style={{ fontSize:11, color:t.textMuted, marginTop:5 }}>{sub}</div>}
+                </div>
+              ))}
+            </div>
+
+            {m.totalRespostas < SAT_AMOSTRAGEM_MIN && (
+              <div style={{ marginBottom:18, padding:"10px 16px", background:"#fef3c7", border:"1px solid #fde68a", borderRadius:10, fontSize:12, color:"#92400e", fontWeight:500 }}>
+                ⚠️ Amostragem pequena ({m.totalRespostas} avaliações). Os indicadores podem não ser representativos.
+              </div>
+            )}
+
+            <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr", gap:16, marginBottom:18 }}>
+              <div style={{ background:t.card, border:`1px solid ${t.border}`, borderRadius:14, padding:"20px 22px" }}>
+                <div style={{ fontWeight:700, fontSize:14, color:t.text, marginBottom:16 }}>Indicadores</div>
+                {[
+                  { label:"Satisfação com o Atendimento", ind:m.at },
+                  { label:"Necessidades Supridas",         ind:m.nec },
+                  { label:"Satisfação com o Sistema",      ind:m.sis },
+                ].map(({ label, ind }) => (
+                  <div key={label} style={{ marginBottom:14 }}>
+                    <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", marginBottom:5 }}>
+                      <span style={{ fontSize:13, color:t.text, fontWeight:500 }}>{label}</span>
+                      <span style={{ fontSize:14, fontWeight:700, color:scoreColor(ind?.media ?? null) }}>
+                        {ind ? ind.media.toFixed(1) : "—"}
+                        {ind && <span style={{ fontSize:11, color:t.textMuted, fontWeight:400, marginLeft:4 }}>({ind.pctPos}%)</span>}
+                      </span>
+                    </div>
+                    <div style={{ height:7, background:dark?"#334155":"#e2e8f0", borderRadius:99, overflow:"hidden" }}>
+                      <div style={{ height:"100%", width:ind ? `${(ind.media/5)*100}%` : "0%", background:scoreColor(ind?.media ?? null), borderRadius:99, transition:"width 0.5s" }} />
+                    </div>
+                  </div>
+                ))}
+              </div>
+
+              <div style={{ background:t.card, border:`1px solid ${t.border}`, borderRadius:14, padding:"20px 22px" }}>
+                <div style={{ fontWeight:700, fontSize:14, color:t.text, marginBottom:16 }}>Distribuição de notas</div>
+                {(() => {
+                  const total = Object.values(m.dist).reduce((a, b) => a + b, 0);
+                  if (!total) return <div style={{ color:t.textMuted, fontSize:13 }}>Sem dados</div>;
+                  return DIST_LABELS.map((label, i) => {
+                    const key = DIST_KEYS[i];
+                    const val = m.dist[key] || 0;
+                    const pct = Math.round(val / total * 100);
+                    return (
+                      <div key={key} style={{ marginBottom:9 }}>
+                        <div style={{ display:"flex", justifyContent:"space-between", marginBottom:4 }}>
+                          <span style={{ fontSize:12, color:t.text }}>{label}</span>
+                          <span style={{ fontSize:12, fontWeight:600, color:t.text }}>{val} <span style={{ color:t.textMuted, fontWeight:400 }}>({pct}%)</span></span>
+                        </div>
+                        <div style={{ height:6, background:dark?"#334155":"#e2e8f0", borderRadius:99, overflow:"hidden" }}>
+                          <div style={{ height:"100%", width:`${pct}%`, background:DIST_COLORS[i], borderRadius:99, transition:"width 0.5s" }} />
+                        </div>
+                      </div>
+                    );
+                  });
+                })()}
+              </div>
+            </div>
+
+            {histPoints && (
+              <div style={{ background:t.card, border:`1px solid ${t.border}`, borderRadius:14, padding:"20px 22px", marginBottom:18 }}>
+                <div style={{ fontWeight:700, fontSize:14, color:t.text, marginBottom:12 }}>Evolução — últimos 12 meses</div>
+                <div style={{ overflowX:"auto" }}>
+                  <svg viewBox={`0 0 ${W} ${H}`} style={{ width:"100%", height:100 }}>
+                    <defs>
+                      <linearGradient id="sat-grad" x1="0" y1="0" x2="0" y2="1">
+                        <stop offset="0%" stopColor="#6366f1" stopOpacity="0.25" />
+                        <stop offset="100%" stopColor="#6366f1" stopOpacity="0" />
+                      </linearGradient>
+                    </defs>
+                    {histPoints.minV < 4 && histPoints.maxV >= 4 && (
+                      <line x1={PAD} y1={histPoints.yRef} x2={W-PAD} y2={histPoints.yRef} stroke="#22c55e" strokeWidth="1" strokeDasharray="4 3" opacity="0.5" />
+                    )}
+                    <path d={`M ${histPoints.pts[0].x} ${H} ${histPoints.pts.map(p=>`L ${p.x} ${p.y}`).join(" ")} L ${histPoints.pts[histPoints.pts.length-1].x} ${H} Z`} fill="url(#sat-grad)" />
+                    <path d={`M ${histPoints.pts[0].x} ${histPoints.pts[0].y} ${histPoints.pts.slice(1).map(p=>`L ${p.x} ${p.y}`).join(" ")}`} fill="none" stroke="#6366f1" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
+                    {histPoints.pts.map((p, i) => (
+                      <g key={i}>
+                        <circle cx={p.x} cy={p.y} r={3.5} fill="#6366f1" />
+                        <text x={p.x} y={p.y - 7}  textAnchor="middle" fontSize={8}   fill={dark?"#a5b4fc":"#4f46e5"} fontWeight="600">{p.media}</text>
+                        <text x={p.x} y={H - 2}    textAnchor="middle" fontSize={8.5} fill={t.textMuted}>{p.label}</text>
+                      </g>
+                    ))}
+                  </svg>
+                </div>
+              </div>
+            )}
+
+            {m.respostas.length > 0 && (
+              <div style={{ background:t.card, border:`1px solid ${t.border}`, borderRadius:14, overflow:"hidden" }}>
+                <div style={{ padding:"16px 22px", borderBottom:`1px solid ${t.border}`, fontWeight:700, fontSize:14, color:t.text }}>
+                  Respostas individuais ({m.respostas.length})
+                </div>
+                <div style={{ overflowX:"auto" }}>
+                  <table style={{ width:"100%", borderCollapse:"collapse", minWidth:520 }}>
+                    <thead>
+                      <tr style={{ background:dark?"#172032":"#f8fafc" }}>
+                        {["Data","Cliente","Atend.","Nec.","Sist.","Geral",""].map((h, i) => (
+                          <th key={i} style={{ padding:"9px 14px", textAlign:i>=2&&i<=5?"center":"left", fontSize:12, color:t.textMuted, fontWeight:600 }}>{h}</th>
+                        ))}
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {m.respostas.map((r, i) => (
+                        <tr key={i} style={{ borderTop:`1px solid ${t.border}` }}>
+                          <td style={{ padding:"9px 14px", fontSize:12, color:t.textMuted }}>{r.data ? new Date(r.data).toLocaleDateString("pt-BR") : "—"}</td>
+                          <td style={{ padding:"9px 14px", fontSize:13, color:t.text, maxWidth:140, overflow:"hidden", textOverflow:"ellipsis", whiteSpace:"nowrap" }}>{r.cliente || "—"}</td>
+                          <td style={{ padding:"9px 14px", textAlign:"center", fontSize:13, fontWeight:600, color:scoreColor(r.atendimento)  }}>{r.atendimento  ?? "—"}</td>
+                          <td style={{ padding:"9px 14px", textAlign:"center", fontSize:13, fontWeight:600, color:scoreColor(r.necessidades) }}>{r.necessidades ?? "—"}</td>
+                          <td style={{ padding:"9px 14px", textAlign:"center", fontSize:13, fontWeight:600, color:scoreColor(r.sistema)      }}>{r.sistema      ?? "—"}</td>
+                          <td style={{ padding:"9px 14px", textAlign:"center" }}>
+                            <span style={{ padding:"2px 10px", background:scoreColor(r.mediaGeral)+"22", border:`1px solid ${scoreColor(r.mediaGeral)}44`, borderRadius:20, fontSize:13, fontWeight:700, color:scoreColor(r.mediaGeral) }}>
+                              {r.mediaGeral?.toFixed(1) ?? "—"}
+                            </span>
+                          </td>
+                          <td style={{ padding:"9px 14px" }}>
+                            {r.comentario && (
+                              <button onClick={() => setDetalhe(r)}
+                                style={{ padding:"3px 9px", background:t.btnSecBg, border:`1px solid ${t.border}`, borderRadius:6, cursor:"pointer", fontSize:11, color:t.btnSecText, ...FF }}>
+                                Ver
+                              </button>
+                            )}
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            )}
+          </>
+        )}
+      </div>
+
+      {detalhe && (
+        <div style={{ position:"fixed", inset:0, background:"rgba(0,0,0,0.5)", zIndex:200, display:"flex", alignItems:"center", justifyContent:"center", padding:16 }}
+          onClick={e => { if (e.target === e.currentTarget) setDetalhe(null); }}>
+          <div style={{ background:t.card, border:`1px solid ${t.border}`, borderRadius:18, padding:28, maxWidth:460, width:"100%", maxHeight:"80vh", overflowY:"auto" }}>
+            <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", marginBottom:18 }}>
+              <h3 style={{ margin:0, fontWeight:700, fontSize:16, color:t.text }}>Detalhes da avaliação</h3>
+              <button onClick={() => setDetalhe(null)} style={{ background:"transparent", border:"none", fontSize:22, cursor:"pointer", color:t.textMuted, padding:"0 4px", lineHeight:1 }}>×</button>
+            </div>
+            {[
+              { label:"Data",         value:detalhe.data ? new Date(detalhe.data).toLocaleDateString("pt-BR") : "—" },
+              { label:"Cliente",      value:detalhe.cliente    || "—" },
+              { label:"Protocolo",    value:detalhe.protocolo  || "—" },
+              { label:"Atendimento",  value:detalhe.atendimento  ?? "—" },
+              { label:"Necessidades", value:detalhe.necessidades ?? "—" },
+              { label:"Sistema",      value:detalhe.sistema      ?? "—" },
+            ].map(({ label, value }) => (
+              <div key={label} style={{ display:"flex", justifyContent:"space-between", padding:"8px 0", borderBottom:`1px solid ${t.border}` }}>
+                <span style={{ fontSize:13, color:t.textMuted }}>{label}</span>
+                <span style={{ fontSize:13, fontWeight:600, color:t.text }}>{value}</span>
+              </div>
+            ))}
+            {detalhe.comentario && (
+              <div style={{ marginTop:14 }}>
+                <div style={{ fontSize:11, fontWeight:600, color:t.textMuted, marginBottom:6, textTransform:"uppercase", letterSpacing:"0.05em" }}>Comentário</div>
+                <div style={{ fontSize:14, color:t.text, lineHeight:1.6, padding:"10px 14px", background:dark?"#0f172a":"#f8fafc", borderRadius:8, border:`1px solid ${t.border}` }}>
+                  {detalhe.comentario}
+                </div>
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
 // ── Home Screen ───────────────────────────────────────────────────────
 
-function HomeScreen({ user, onOpenPage, onLogout, onGestao }) {
+function HomeScreen({ user, onOpenPage, onLogout, onGestao, onPonto, onSatisfacao }) {
   const { t } = useTheme();
   const [employees, setEmployees] = useState([]);
   const [pages,     setPages]     = useState([]);
   const [counts,    setCounts]    = useState({});
   const [loading,   setLoading]   = useState(true);
+  const [changelog, setChangelog] = useState(() => {
+    try { return localStorage.getItem(CHANGELOG_KEY) !== "1"; } catch { return true; }
+  });
+  const [seen, setSeen] = useState(() => {
+    try { return localStorage.getItem(CHANGELOG_KEY) === "1"; } catch { return false; }
+  });
 
   useEffect(() => {
     (async () => {
@@ -1401,10 +2859,20 @@ function HomeScreen({ user, onOpenPage, onLogout, onGestao }) {
 
       <div style={{ background:t.header, padding:"0 24px", display:"flex", alignItems:"center", justifyContent:"space-between", height:58, position:"sticky", top:0, zIndex:50, boxShadow:"0 2px 12px rgba(0,0,0,0.4)" }}>
         <div style={{ display:"flex", alignItems:"center", gap:10 }}>
-          <span style={{ fontSize:22 }}>📋</span>
+          <img src="/logo.png" alt="Logo" style={{ width:28, height:28, objectFit:"contain" }} />
           <span style={{ color:"#f8fafc", fontWeight:800, fontSize:16 }}>Central de Atendimentos</span>
         </div>
         <div style={{ display:"flex", alignItems:"center", gap:14 }}>
+          <button onClick={()=>setChangelog(true)}
+            style={{ position:"relative", background:"rgba(255,255,255,0.07)", border:"1px solid rgba(255,255,255,0.12)", color:"#cbd5e1", borderRadius:8, padding:"6px 12px", cursor:"pointer", fontSize:12, fontWeight:500, display:"flex", alignItems:"center", gap:7, ...FF }}
+            onMouseEnter={e=>e.currentTarget.style.background="rgba(255,255,255,0.12)"}
+            onMouseLeave={e=>e.currentTarget.style.background="rgba(255,255,255,0.07)"}>
+            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+              <polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/>
+            </svg>
+            Novidades
+            {!seen && <span style={{ position:"absolute", top:-4, right:-4, width:8, height:8, borderRadius:"50%", background:"#818cf8", border:"2px solid #0f172a" }} />}
+          </button>
           <DarkToggle />
           <div style={{ display:"flex", alignItems:"center", gap:8 }}>
             <Avatar name={user.name} color={user.color||"#6366f1"} size={30} />
@@ -1413,6 +2881,8 @@ function HomeScreen({ user, onOpenPage, onLogout, onGestao }) {
           {user.id === "admin" && (
             <button onClick={onGestao} style={{ background:"rgba(255,255,255,0.07)", border:"1px solid rgba(96,165,250,0.4)", color:"#93c5fd", borderRadius:8, padding:"6px 12px", cursor:"pointer", fontSize:12, fontWeight:600, ...FF }}>📊 Gestão</button>
           )}
+          <button onClick={onSatisfacao} style={{ background:"rgba(255,255,255,0.07)", border:"1px solid rgba(251,191,36,0.4)", color:"#fde68a", borderRadius:8, padding:"6px 12px", cursor:"pointer", fontSize:12, fontWeight:600, ...FF }}>⭐ Satisfação</button>
+          <button onClick={onPonto} style={{ background:"rgba(255,255,255,0.07)", border:"1px solid rgba(167,139,250,0.4)", color:"#c4b5fd", borderRadius:8, padding:"6px 12px", cursor:"pointer", fontSize:12, fontWeight:600, ...FF }}>📄 Ponto</button>
           <button onClick={onLogout} style={{ background:"rgba(255,255,255,0.07)", border:"1px solid rgba(255,255,255,0.1)", color:"#94a3b8", borderRadius:8, padding:"6px 12px", cursor:"pointer", fontSize:12, ...FF }}>Sair</button>
         </div>
       </div>
@@ -1442,6 +2912,7 @@ function HomeScreen({ user, onOpenPage, onLogout, onGestao }) {
           </div>
         )}
       </div>
+      {changelog && <ChangelogModal onClose={()=>setChangelog(false)} onDismiss={()=>setSeen(true)} />}
     </div>
   );
 }
@@ -1460,6 +2931,7 @@ function PageDetail({ page, initEmployees, user, onBack, onLogout }) {
   const [agendaModal, setAgendaModal] = useState(null);
   const [alertRecord, setAlertRecord] = useState(null);
   const [tipoEdit,    setTipoEdit]    = useState(null);
+  const [changelog,   setChangelog]   = useState(false);
   const alertedIds = useRef(new Set());
   const FKEY = `atend_filters_${page.id}`;
   const [filters, setFilters] = useState(() => {
@@ -1488,7 +2960,8 @@ function PageDetail({ page, initEmployees, user, onBack, onLogout }) {
   const delRecord  = async () => { await deleteDoc(doc(db,"records",`${page.id}-${confirmId}`)); setConfirmId(null); };
   const togglePrio      = async id => { const r = records.find(x=>x.id===id); if(r) await setDoc(doc(db,"records",`${page.id}-${id}`), {...r, prioridade:!r.prioridade}); };
   const togglePesquisa  = async id => { const r = records.find(x=>x.id===id); if(r) await setDoc(doc(db,"records",`${page.id}-${id}`), {...r, pesquisaEnviada:!r.pesquisaEnviada}); };
-  const resolveRecord = async r => { await setDoc(doc(db,"records",`${page.id}-${r.id}`), {...r, status:"Resolvido", pageId:page.id}); setSatPopup(true); };
+  const resolveRecord  = async r => { await setDoc(doc(db,"records",`${page.id}-${r.id}`), {...r, status:"Resolvido", pageId:page.id}); setSatPopup(true); };
+  const updateStatus   = async (r, newStatus) => { await setDoc(doc(db,"records",`${page.id}-${r.id}`), {...r, status:newStatus, pageId:page.id}); if (newStatus === "Resolvido") setSatPopup(true); };
   const saveAgenda    = async updated => { await setDoc(doc(db,"records",`${page.id}-${updated.id}`), {...updated, pageId:page.id}); setAgendaModal(null); };
   const saveTipoColor = async tp => { await setDoc(doc(db,"tipos",tp.id), tp); setTipos(prev=>prev.map(x=>x.id===tp.id?tp:x)); };
   const setF = k => v => setFilters(p=>({...p,[k]:v}));
@@ -1550,6 +3023,16 @@ function PageDetail({ page, initEmployees, user, onBack, onLogout }) {
           </div>
         </div>
         <div style={{ display:"flex", alignItems:"center", gap:14 }}>
+          <button onClick={()=>setChangelog(true)}
+            style={{ position:"relative", background:"rgba(255,255,255,0.07)", border:"1px solid rgba(255,255,255,0.12)", color:"#cbd5e1", borderRadius:8, padding:"6px 12px", cursor:"pointer", fontSize:12, fontWeight:500, display:"flex", alignItems:"center", gap:7, ...FF }}
+            onMouseEnter={e=>e.currentTarget.style.background="rgba(255,255,255,0.12)"}
+            onMouseLeave={e=>e.currentTarget.style.background="rgba(255,255,255,0.07)"}>
+            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+              <polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/>
+            </svg>
+            Novidades
+            <span style={{ position:"absolute", top:-4, right:-4, width:8, height:8, borderRadius:"50%", background:"#818cf8", border:"2px solid #0f172a" }} />
+          </button>
           <DarkToggle />
           <div style={{ display:"flex", alignItems:"center", gap:8 }}>
             <Avatar name={user.name} color={user.color||"#6366f1"} size={30} />
@@ -1594,7 +3077,7 @@ function PageDetail({ page, initEmployees, user, onBack, onLogout }) {
             <option value="Todos">Todos atendentes</option>
             {employees.map(e=><option key={e.id} value={e.id}>{e.name}</option>)}
           </select>
-          <button onClick={()=>setModal({mode:"add"})} style={{ padding:"9px 18px", background:"linear-gradient(135deg,#0ea5e9,#6366f1)", border:"none", borderRadius:9, color:"#fff", fontWeight:700, fontSize:14, cursor:"pointer", whiteSpace:"nowrap", ...FF }}>
+          <button onClick={()=>setModal({mode:"add"})} style={{ padding:"9px 18px", background:"#6366f1", border:"none", borderRadius:9, color:"#fff", fontWeight:700, fontSize:14, cursor:"pointer", whiteSpace:"nowrap", ...FF }}>
             + Novo Atendimento
           </button>
         </div>
@@ -1609,99 +3092,22 @@ function PageDetail({ page, initEmployees, user, onBack, onLogout }) {
               <div style={{ fontSize:13, color:t.textMuted }}>Ajuste os filtros ou adicione um novo atendimento.</div>
             </div>
           ) : (
-            <div style={{ overflowX:"auto" }}>
-              <table style={{ width:"100%", borderCollapse:"collapse", fontSize:13 }}>
-                <thead>
-                  <tr style={{ background:t.thead, borderBottom:`2px solid ${t.theadBorder}` }}>
-                    {[["P","36px"],["Status","130px"]].map(([h,w])=>(
-                      <th key={h} style={{ padding:"11px 12px", textAlign:"left", color:t.textMuted, fontWeight:700, fontSize:11, textTransform:"uppercase", letterSpacing:0.5, whiteSpace:"nowrap", width:w||undefined }}>{h}</th>
-                    ))}
-                    <th title="Pesquisa enviada" style={{ padding:"11px 12px", textAlign:"center", color:t.textMuted, width:"44px" }}>
-                      <svg xmlns="http://www.w3.org/2000/svg" width="17" height="13" viewBox="0 0 34 26" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
-                        <line x1="0" y1="7" x2="8" y2="7"/><line x1="2" y1="13" x2="8" y2="13"/>
-                        <rect x="10" y="3" width="22" height="16" rx="2"/>
-                        <polyline points="10,3 21,12 32,3"/>
-                      </svg>
-                    </th>
-                    {[["Data","72px"],["Atendente","110px"],["Cliente",""],["Via","90px"],["Contato","140px"],["Tipo","115px"],["Descrição",""],["","90px"]].map(([h,w])=>(
-                      <th key={h} style={{ padding:"11px 12px", textAlign:"left", color:t.textMuted, fontWeight:700, fontSize:11, textTransform:"uppercase", letterSpacing:0.5, whiteSpace:"nowrap", width:w||undefined }}>{h}</th>
-                    ))}
-                    <th style={{ padding:"11px 12px", textAlign:"center", color:t.textMuted, width:"44px" }}>
-                      <span style={{ display:"inline-flex", alignItems:"center", gap:4 }}>
-                        <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                          <path d="M21 13V6a2 2 0 0 0-2-2H5a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h8"/>
-                          <line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/>
-                          <line x1="3" y1="10" x2="21" y2="10"/>
-                          <circle cx="18" cy="18" r="4"/><polyline points="18 16 18 18 20 18"/>
-                        </svg>
-                        {records.filter(r=>r.agendamento&&!r.agendamento.concluido).length > 0 && (
-                          <span style={{ background:"#f59e0b", color:"#fff", borderRadius:10, padding:"1px 5px", fontSize:10, fontWeight:700 }}>
-                            {records.filter(r=>r.agendamento&&!r.agendamento.concluido).length}
-                          </span>
-                        )}
-                      </span>
-                    </th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {filtered.map((r,i)=>{
-                    const atend = employees.find(e=>e.id===r.atendenteId);
-                    return (
-                      <tr key={r.id}
-                        style={{ borderBottom:`1px solid ${t.border}`, background:r.prioridade?t.rowPrio:(i%2===0?t.rowEven:t.rowOdd) }}
-                        onMouseEnter={e=>e.currentTarget.style.background=t.rowHover}
-                        onMouseLeave={e=>e.currentTarget.style.background=r.prioridade?t.rowPrio:(i%2===0?t.rowEven:t.rowOdd)}
-                      >
-                        <td style={{ padding:"9px 12px", textAlign:"center" }}><input type="checkbox" checked={r.prioridade} onChange={()=>togglePrio(r.id)} style={{ width:15, height:15, cursor:"pointer", accentColor:"#6366f1" }} /></td>
-                        <td style={{ padding:"9px 12px" }}><StatusBadge status={r.status} /></td>
-                        <td style={{ padding:"9px 12px", textAlign:"center" }}><input type="checkbox" checked={!!r.pesquisaEnviada} onChange={()=>togglePesquisa(r.id)} title="Pesquisa enviada" style={{ width:15, height:15, cursor:"pointer", accentColor:"#10b981" }} /></td>
-                        <td style={{ padding:"9px 12px", color:t.textSub, whiteSpace:"nowrap", fontSize:12 }}>{r.data}</td>
-                        <td style={{ padding:"9px 12px" }}>
-                          {atend
-                            ? <div style={{ display:"flex", alignItems:"center", gap:6 }}><Avatar name={atend.name} color={atend.color} size={24} /><span style={{ fontSize:12, fontWeight:500, color:t.textSub }}>{atend.name}</span></div>
-                            : <span style={{ color:t.textMuted, fontSize:12 }}>—</span>}
-                        </td>
-                        <td style={{ padding:"9px 12px", fontWeight:600, color:t.text, maxWidth:200 }}><div style={{ overflow:"hidden", textOverflow:"ellipsis", whiteSpace:"nowrap" }}>{r.cliente}</div></td>
-                        <td style={{ padding:"9px 12px" }}>
-                          <div style={{ display:"flex", flexDirection:"column", gap:3 }}>
-                            <ViaBadge via={r.via} />
-                            {r.via2 && <ViaBadge via={r.via2} />}
-                          </div>
-                        </td>
-                        <td style={{ padding:"9px 12px", maxWidth:160 }}>
-                          <div style={{ display:"flex", flexDirection:"column", gap:3 }}>
-                            {r.via === "Ticket" && r.contato
-                              ? <a href={/^https?:\/\//i.test(r.contato) ? r.contato : `https://${r.contato}`} target="_blank" rel="noreferrer" style={{ color:"#6366f1", fontSize:12, fontWeight:500, textDecoration:"none", overflow:"hidden", textOverflow:"ellipsis", whiteSpace:"nowrap", display:"block" }} title={r.contato}>🔗 {r.contato}</a>
-                              : <div style={{ overflow:"hidden", textOverflow:"ellipsis", whiteSpace:"nowrap", color:t.textSub, fontSize:12 }}>{r.contato}</div>
-                            }
-                            {r.via2 && r.contato2 && (
-                              r.via2 === "Ticket"
-                                ? <a href={/^https?:\/\//i.test(r.contato2) ? r.contato2 : `https://${r.contato2}`} target="_blank" rel="noreferrer" style={{ color:"#6366f1", fontSize:12, fontWeight:500, textDecoration:"none", overflow:"hidden", textOverflow:"ellipsis", whiteSpace:"nowrap", display:"block" }} title={r.contato2}>🔗 {r.contato2}</a>
-                                : <div style={{ overflow:"hidden", textOverflow:"ellipsis", whiteSpace:"nowrap", color:t.textSub, fontSize:12 }}>{r.contato2}</div>
-                            )}
-                          </div>
-                        </td>
-                        <td style={{ padding:"9px 12px" }}><TipoBadge tipo={r.tipo} tipoObj={tiposMap[r.tipo]} onClick={()=>tiposMap[r.tipo]&&setTipoEdit({...tiposMap[r.tipo]})} /></td>
-                        <td style={{ padding:"9px 12px", maxWidth:240 }}><div style={{ overflow:"hidden", textOverflow:"ellipsis", whiteSpace:"nowrap", color:t.textSub }}>{r.descricao}</div></td>
-                        <td style={{ padding:"9px 8px", whiteSpace:"nowrap" }}>
-                          <button onClick={()=>setModal({mode:"edit",record:r})} title="Editar" style={{ background:"none", border:`1px solid ${t.border}`, cursor:"pointer", borderRadius:7, padding:"4px 8px", fontSize:12, marginRight:4 }}>✏️</button>
-                          <button
-                            onClick={()=>r.status!=="Resolvido"&&resolveRecord(r)}
-                            disabled={r.status==="Resolvido"}
-                            title={r.status==="Resolvido"?"Já resolvido":"Marcar como resolvido"}
-                            style={{ background:"none", border:r.status==="Resolvido"?`1px solid ${t.border}`:"1px solid #bbf7d0", cursor:r.status==="Resolvido"?"default":"pointer", borderRadius:7, padding:"4px 8px", fontSize:12, marginRight:4, opacity:r.status==="Resolvido"?0.35:1 }}>✅</button>
-                          <button onClick={()=>setConfirmId(r.id)} title="Excluir" style={{ background:"none", border:"1px solid #fecaca", cursor:"pointer", borderRadius:7, padding:"4px 8px", fontSize:12 }}>🗑️</button>
-                        </td>
-                        <td style={{ padding:"9px 8px", textAlign:"center", width:"44px" }}>
-                          {r.agendamento&&!r.agendamento.concluido && (
-                            <button onClick={()=>setAgendaModal(r)} title={r.agendamento.titulo} style={{ background:"none", border:"none", cursor:"pointer", fontSize:15, padding:"2px 4px", borderRadius:6 }}>❗</button>
-                          )}
-                        </td>
-                      </tr>
-                    );
-                  })}
-                </tbody>
-              </table>
+            <div style={{ padding:"10px 12px", display:"flex", flexDirection:"column", gap:5 }}>
+              {filtered.map(r => (
+                <RecordRow
+                  key={r.id}
+                  r={r}
+                  employees={employees}
+                  tiposMap={tiposMap}
+                  togglePrio={togglePrio}
+                  togglePesquisa={togglePesquisa}
+                  updateStatus={updateStatus}
+                  setModal={setModal}
+                  setConfirmId={setConfirmId}
+                  setAgendaModal={setAgendaModal}
+                  setTipoEdit={setTipoEdit}
+                />
+              ))}
             </div>
           )}
         </div>
@@ -1714,6 +3120,7 @@ function PageDetail({ page, initEmployees, user, onBack, onLogout }) {
       {confirmId!==null && <ConfirmDialog message="Este registro será excluído permanentemente." onConfirm={delRecord} onCancel={()=>setConfirmId(null)} />}
       {agendaModal && <AgendaModal record={agendaModal} onSave={saveAgenda} onClose={()=>setAgendaModal(null)} />}
       {tipoEdit    && <TipoColorPanel tipos={tipos} department={page.department} initialTipo={tipoEdit} onSave={tp=>{ saveTipoColor(tp); setTipoEdit(null); }} onClose={()=>setTipoEdit(null)} />}
+      {changelog   && <ChangelogModal onClose={()=>setChangelog(false)} onDismiss={()=>{}} />}
       {alertRecord && (
         <Overlay z={1200}>
           <div style={{ background:"#fff", borderRadius:20, padding:"28px 32px", maxWidth:400, width:"90%", boxShadow:"0 20px 50px rgba(0,0,0,0.3)", ...FF }}>
@@ -1731,7 +3138,7 @@ function PageDetail({ page, initEmployees, user, onBack, onLogout }) {
             </div>
             <div style={{ display:"flex", gap:8 }}>
               <button onClick={()=>setAlertRecord(null)} style={{ flex:1, padding:"10px 0", background:"#f1f5f9", border:"none", borderRadius:10, color:"#475569", fontWeight:600, cursor:"pointer", ...FF }}>Dispensar</button>
-              <button onClick={()=>{ setAgendaModal(alertRecord); setAlertRecord(null); }} style={{ flex:2, padding:"10px 0", background:"linear-gradient(135deg,#f59e0b,#d97706)", border:"none", borderRadius:10, color:"#fff", fontWeight:700, cursor:"pointer", ...FF }}>Ver compromisso</button>
+              <button onClick={()=>{ setAgendaModal(alertRecord); setAlertRecord(null); }} style={{ flex:2, padding:"10px 0", background:"#f59e0b", border:"none", borderRadius:8, color:"#fff", fontWeight:600, cursor:"pointer", ...FF }}>Ver compromisso</button>
             </div>
           </div>
         </Overlay>
@@ -1741,7 +3148,7 @@ function PageDetail({ page, initEmployees, user, onBack, onLogout }) {
           <div style={{ background:"#fff", borderRadius:20, padding:"32px 36px", maxWidth:360, width:"90%", textAlign:"center", boxShadow:"0 20px 50px rgba(0,0,0,0.25)", ...FF }}>
             <div style={{ fontSize:42, marginBottom:14 }}>📋</div>
             <p style={{ fontSize:16, fontWeight:600, color:"#1e293b", margin:"0 0 24px", lineHeight:1.5 }}>Você já enviou a pesquisa de satisfação?</p>
-            <button onClick={()=>setSatPopup(false)} style={{ padding:"11px 40px", background:"linear-gradient(135deg,#0ea5e9,#6366f1)", border:"none", borderRadius:10, color:"#fff", fontWeight:700, fontSize:15, cursor:"pointer", ...FF }}>OK</button>
+            <button onClick={()=>setSatPopup(false)} style={{ padding:"11px 40px", background:"#6366f1", border:"none", borderRadius:10, color:"#fff", fontWeight:700, fontSize:15, cursor:"pointer", ...FF }}>OK</button>
           </div>
         </Overlay>
       )}
@@ -1785,10 +3192,12 @@ function LoginScreen({ onLogin, onAdmin }) {
       </div>
 
       <div style={{ width:"100%", maxWidth:520 }}>
-        <div style={{ textAlign:"center", marginBottom:38 }}>
-          <div style={{ width:66, height:66, borderRadius:20, background:"linear-gradient(135deg,#0ea5e9,#6366f1)", display:"flex", alignItems:"center", justifyContent:"center", margin:"0 auto 16px", fontSize:32 }}>📋</div>
-          <h1 style={{ color:t.loginText, fontSize:24, fontWeight:800, margin:0, letterSpacing:-0.5 }}>Central de Atendimentos</h1>
-          <p style={{ color:t.loginSub, margin:"8px 0 0", fontSize:14 }}>Selecione seu perfil para entrar</p>
+        <div style={{ textAlign:"center", marginBottom:36 }}>
+          <div style={{ width:72, height:72, borderRadius:20, background:"#0f172a", display:"flex", alignItems:"center", justifyContent:"center", margin:"0 auto 18px", overflow:"hidden", boxShadow:"0 4px 20px rgba(0,0,0,0.2)" }}>
+            <img src="/logo.png" alt="Logo" style={{ width:52, height:52, objectFit:"contain" }} />
+          </div>
+          <h1 style={{ color:t.loginText, fontSize:22, fontWeight:800, margin:0, letterSpacing:-0.5 }}>Central de Atendimentos</h1>
+          <p style={{ color:t.loginSub, margin:"6px 0 0", fontSize:13.5 }}>Selecione seu perfil para continuar</p>
         </div>
 
         {loading ? <div style={{ textAlign:"center", color:t.loginSub, padding:40 }}>Carregando...</div>
@@ -1796,64 +3205,69 @@ function LoginScreen({ onLogin, onAdmin }) {
         : !selected && !showAdmForm ? (
           <>
             {employees.length === 0
-              ? <div style={{ textAlign:"center", color:t.loginSub, padding:40, background:t.loginCardBg, borderRadius:16, border:t.loginCardBorder }}>
+              ? <div style={{ textAlign:"center", color:t.loginSub, padding:40, background:t.loginCardBg, borderRadius:12, border:t.loginCardBorder }}>
                   <div style={{ fontSize:36, marginBottom:10 }}>👥</div>
                   <p style={{ margin:0, fontSize:14, lineHeight:1.7, color:t.loginText }}>Nenhum atendente cadastrado.<br />Acesse como administrador para criar.</p>
                 </div>
-              : <div style={{ display:"grid", gridTemplateColumns:"repeat(2,1fr)", gap:12 }}>
+              : <div style={{ display:"grid", gridTemplateColumns:"repeat(2,1fr)", gap:10 }}>
                   {employees.map(emp=>(
                     <button key={emp.id} onClick={()=>{setSelected(emp);setError("");setPw("");}}
-                      style={{ background:t.loginEmpBg, border:t.loginEmpBorder, borderRadius:14, padding:"18px 16px", cursor:"pointer", display:"flex", alignItems:"center", gap:12, color:t.loginEmpText, ...FF, transition:"background 0.15s" }}
-                      onMouseEnter={e=>e.currentTarget.style.background=t.loginEmpBgHover}
-                      onMouseLeave={e=>e.currentTarget.style.background=t.loginEmpBg}
+                      style={{ background:t.loginEmpBg, border:t.loginEmpBorder, borderRadius:12, padding:"16px 14px", cursor:"pointer", display:"flex", alignItems:"center", gap:12, color:t.loginEmpText, ...FF, transition:"background 0.15s, box-shadow 0.15s", textAlign:"left", outline:"none" }}
+                      onMouseEnter={e=>{e.currentTarget.style.background=t.loginEmpBgHover; e.currentTarget.style.boxShadow="0 0 0 2px #6366f1";}}
+                      onMouseLeave={e=>{e.currentTarget.style.background=t.loginEmpBg; e.currentTarget.style.boxShadow="none";}}
                     >
-                      <Avatar name={emp.name} color={emp.color} size={42} />
-                      <span style={{ fontWeight:600, fontSize:15 }}>{emp.name}</span>
+                      <Avatar name={emp.name} color={emp.color} size={38} />
+                      <span style={{ fontWeight:600, fontSize:14 }}>{emp.name}</span>
                     </button>
                   ))}
                 </div>
             }
-            <div style={{ textAlign:"center", marginTop:28 }}>
+            <div style={{ textAlign:"center", marginTop:24 }}>
               <button onClick={()=>{setShowAdmForm(true);setAdmErr("");setAdmPw("");}}
-                style={{ background:t.loginAdmBg, border:t.loginAdmBorder, color:t.loginAdmText, cursor:"pointer", fontSize:13, ...FF, padding:"8px 18px", borderRadius:10, display:"inline-flex", alignItems:"center", gap:7 }}>
+                style={{ background:t.loginAdmBg, border:t.loginAdmBorder, color:t.loginAdmText, cursor:"pointer", fontSize:12.5, ...FF, padding:"7px 16px", borderRadius:8, display:"inline-flex", alignItems:"center", gap:6 }}>
                 ⚙️ Área do Administrador
               </button>
             </div>
           </>
 
         ) : showAdmForm ? (
-          <div style={{ background:t.loginCardBg, border:t.loginCardBorder, borderRadius:20, padding:32 }}>
-            <div style={{ display:"flex", alignItems:"center", gap:12, marginBottom:26 }}>
-              <div style={{ width:46, height:46, borderRadius:"50%", background:"linear-gradient(135deg,#f59e0b,#ef4444)", display:"flex", alignItems:"center", justifyContent:"center", fontSize:20, flexShrink:0 }}>⚙️</div>
+          <div style={{ background:t.loginCardBg, border:t.loginCardBorder, borderRadius:14, padding:"28px 28px 24px" }}>
+            <div style={{ display:"flex", alignItems:"center", gap:12, marginBottom:22 }}>
+              <div style={{ width:40, height:40, borderRadius:10, background:"#fef3c7", display:"flex", alignItems:"center", justifyContent:"center", fontSize:18, flexShrink:0 }}>⚙️</div>
               <div>
-                <div style={{ color:t.loginText, fontWeight:700, fontSize:17 }}>Administrador</div>
-                <button onClick={()=>{setShowAdmForm(false);setAdmErr("");}} style={{ background:"none", border:"none", color:t.loginSub, cursor:"pointer", fontSize:13, padding:0, ...FF }}>← Voltar</button>
+                <div style={{ color:t.loginText, fontWeight:700, fontSize:15 }}>Administrador</div>
+                <button onClick={()=>{setShowAdmForm(false);setAdmErr("");}} style={{ background:"none", border:"none", color:t.loginSub, cursor:"pointer", fontSize:12.5, padding:0, ...FF }}>← Voltar</button>
               </div>
             </div>
             <Field label="Senha de administrador">
               <input type="password" value={admPw} onChange={e=>{setAdmPw(e.target.value);setAdmErr("");}} onKeyDown={e=>e.key==="Enter"&&attemptAdmin()} placeholder="Digite a senha..." autoFocus style={dInp} />
             </Field>
-            {admErr && <p style={{ color:"#f87171", fontSize:13, margin:"-8px 0 16px", fontWeight:500 }}>{admErr}</p>}
-            <button onClick={attemptAdmin} style={{ width:"100%", padding:13, background:"linear-gradient(135deg,#f59e0b,#ef4444)", border:"none", borderRadius:10, color:"#fff", fontWeight:700, fontSize:15, cursor:"pointer", ...FF }}>Entrar como Administrador →</button>
+            {admErr && <p style={{ color:"#f87171", fontSize:13, margin:"-8px 0 14px", fontWeight:500 }}>{admErr}</p>}
+            <button onClick={attemptAdmin} style={{ width:"100%", padding:"11px", background:"#f59e0b", border:"none", borderRadius:8, color:"#fff", fontWeight:600, fontSize:14, cursor:"pointer", ...FF }}>Entrar como Administrador</button>
           </div>
 
         ) : (
-          <div style={{ background:t.loginCardBg, border:t.loginCardBorder, borderRadius:20, padding:32 }}>
-            <div style={{ display:"flex", alignItems:"center", gap:14, marginBottom:26 }}>
-              <Avatar name={selected.name} color={selected.color} size={50} />
+          <div style={{ background:t.loginCardBg, border:t.loginCardBorder, borderRadius:14, padding:"28px 28px 24px" }}>
+            <div style={{ display:"flex", alignItems:"center", gap:14, marginBottom:22 }}>
+              <Avatar name={selected.name} color={selected.color} size={46} />
               <div>
-                <div style={{ color:t.loginText, fontWeight:700, fontSize:18 }}>{selected.name}</div>
-                <button onClick={()=>{setSelected(null);setPw("");setError("");}} style={{ background:"none", border:"none", color:t.loginSub, cursor:"pointer", fontSize:13, padding:0, ...FF }}>← Trocar funcionário</button>
+                <div style={{ color:t.loginText, fontWeight:700, fontSize:16 }}>{selected.name}</div>
+                <button onClick={()=>{setSelected(null);setPw("");setError("");}} style={{ background:"none", border:"none", color:t.loginSub, cursor:"pointer", fontSize:12.5, padding:0, ...FF }}>← Trocar funcionário</button>
               </div>
             </div>
             <Field label="Senha">
               <div style={{ position:"relative" }}>
                 <input type={showPw?"text":"password"} value={pw} onChange={e=>{setPw(e.target.value);setError("");}} onKeyDown={e=>e.key==="Enter"&&attempt()} placeholder="Digite sua senha..." autoFocus style={{ ...dInp, paddingRight:44 }} />
-                <button onClick={()=>setShowPw(v=>!v)} style={{ position:"absolute", right:10, top:"50%", transform:"translateY(-50%)", background:"none", border:"none", color:t.loginSub, cursor:"pointer", fontSize:17, padding:4 }}>{showPw?"👁":"👁️"}</button>
+                <button onClick={()=>setShowPw(v=>!v)} style={{ position:"absolute", right:10, top:"50%", transform:"translateY(-50%)", background:"none", border:"none", color:t.loginSub, cursor:"pointer", padding:4, display:"flex", alignItems:"center", justifyContent:"center" }}>
+                  {showPw
+                    ? <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M2 12s3.6-8 10-8 10 8 10 8-3.6 8-10 8-10-8-10-8z"/><circle cx="12" cy="12" r="3.5"/><circle cx="12" cy="12" r="1.2"/><line x1="3" y1="3" x2="21" y2="21"/></svg>
+                    : <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M2 12s3.6-8 10-8 10 8 10 8-3.6 8-10 8-10-8-10-8z"/><circle cx="12" cy="12" r="3.5"/><circle cx="12" cy="12" r="1.2"/></svg>
+                  }
+                </button>
               </div>
             </Field>
-            {error && <p style={{ color:"#f87171", fontSize:13, margin:"-8px 0 16px", fontWeight:500 }}>{error}</p>}
-            <button onClick={attempt} style={{ width:"100%", padding:13, background:"linear-gradient(135deg,#0ea5e9,#6366f1)", border:"none", borderRadius:10, color:"#fff", fontWeight:700, fontSize:15, cursor:"pointer", ...FF }}>Entrar →</button>
+            {error && <p style={{ color:"#f87171", fontSize:13, margin:"-8px 0 14px", fontWeight:500 }}>{error}</p>}
+            <button onClick={attempt} style={{ width:"100%", padding:"11px", background:"#6366f1", border:"none", borderRadius:8, color:"#fff", fontWeight:600, fontSize:14, cursor:"pointer", ...FF }}>Entrar</button>
           </div>
         )}
       </div>
@@ -3709,7 +5123,7 @@ function GestaoComercial({ onBack, onLogout }) {
                   Cancelar
                 </button>
                 <button onClick={generateReport}
-                  style={{ flex:2, padding:"10px", background:"linear-gradient(135deg,#0ea5e9,#6366f1)", border:"none", borderRadius:9, color:"#fff", fontWeight:700, fontSize:13, cursor:"pointer", fontFamily:"inherit" }}>
+                  style={{ flex:2, padding:"10px", background:"#6366f1", border:"none", borderRadius:9, color:"#fff", fontWeight:700, fontSize:13, cursor:"pointer", fontFamily:"inherit" }}>
                   🖨️ Emitir Relatório
                 </button>
               </div>
@@ -3981,6 +5395,343 @@ function PublicReport() {
   );
 }
 
+// ── Ponto Digital ─────────────────────────────────────────────────────
+
+function PontoDigital({ user, onBack }) {
+  const { t } = useTheme();
+  const [signature,   setSignature]   = useState(null);
+  const [carimbo,     setCarimbo]     = useState(null);
+  const [loading,     setLoading]     = useState(true);
+  const [pdfFile,     setPdfFile]     = useState(null);
+  const [pagesData,   setPagesData]   = useState([]); // [{ dataUrl, pdfW, pdfH }]
+  const [pagesLoading,setPagesLoading]= useState(false);
+  const [status,      setStatus]      = useState("idle");
+  const [signedUrl,   setSignedUrl]   = useState(null);
+  const [errMsg,      setErrMsg]      = useState("");
+  // position per page: { xPct, yPct, pageIdx }
+  const [sigPos,   setSigPos]   = useState({ xPct: 55, yPct: 80, pageIdx: 0 });
+  const [stampPos, setStampPos] = useState({ xPct: 3,  yPct: 80, pageIdx: 0 });
+  const [dragging, setDragging] = useState(null);
+  const pageRefs      = useRef([]);
+  const dragOffsetRef = useRef({ x: 0, y: 0, pageIdx: 0 });
+
+  useEffect(() => {
+    Promise.all([loadSignature(user.id), loadSignature("carimbo")]).then(([sig, car]) => {
+      setSignature(sig); setCarimbo(car); setLoading(false);
+    });
+  }, [user.id]);
+
+  useEffect(() => () => {
+    if (signedUrl) URL.revokeObjectURL(signedUrl);
+  }, [signedUrl]);
+
+  async function handlePdf(f) {
+    if (!f) return;
+    if (!f.type.includes("pdf") && !f.name.endsWith(".pdf")) return;
+    if (signedUrl) URL.revokeObjectURL(signedUrl);
+    setPdfFile(f); setStatus("idle"); setSignedUrl(null);
+    setPagesData([]); setPagesLoading(true);
+    pageRefs.current = [];
+    // Reset positions to bottom area defaults
+    setSigPos({ xPct: 55, yPct: 80, pageIdx: 0 });
+    setStampPos({ xPct: 3, yPct: 80, pageIdx: 0 });
+
+    try {
+      const pdfjsLib = await import("pdfjs-dist/build/pdf.min.js");
+      if (!pdfjsLib.GlobalWorkerOptions.workerSrc) {
+        pdfjsLib.GlobalWorkerOptions.workerSrc = "https://cdn.jsdelivr.net/npm/pdfjs-dist@3.11.174/build/pdf.worker.min.js";
+      }
+      const arrayBuf = await f.arrayBuffer();
+      const pdf = await pdfjsLib.getDocument({ data: arrayBuf }).promise;
+      const rendered = [];
+      for (let i = 1; i <= pdf.numPages; i++) {
+        const page = await pdf.getPage(i);
+        const vp0  = page.getViewport({ scale: 1 });
+        const scale = Math.min(2, 1200 / vp0.width);
+        const vp   = page.getViewport({ scale });
+        const canvas = document.createElement("canvas");
+        canvas.width  = Math.round(vp.width);
+        canvas.height = Math.round(vp.height);
+        await page.render({ canvasContext: canvas.getContext("2d"), viewport: vp }).promise;
+        rendered.push({ dataUrl: canvas.toDataURL("image/jpeg", 0.88), pdfW: vp0.width, pdfH: vp0.height });
+      }
+      setPagesData(rendered);
+    } catch {
+      // Fallback: blank A4 proportioned page
+      try {
+        const { PDFDocument } = await import("pdf-lib");
+        const doc = await PDFDocument.load(await f.arrayBuffer());
+        const pages = doc.getPages().map(p => { const { width, height } = p.getSize(); return { dataUrl: null, pdfW: width, pdfH: height }; });
+        setPagesData(pages);
+      } catch { setPagesData([{ dataUrl: null, pdfW: 595, pdfH: 842 }]); }
+    } finally {
+      setPagesLoading(false);
+    }
+  }
+
+  async function handleSign() {
+    if (!pdfFile || !signature) return;
+    setStatus("processing");
+    try {
+      const { PDFDocument } = await import("pdf-lib");
+      const b64ToBuffer = b64 => {
+        const base = b64.includes(",") ? b64.split(",")[1] : b64;
+        const bin = atob(base);
+        const buf = new ArrayBuffer(bin.length);
+        const bytes = new Uint8Array(buf);
+        for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
+        return buf;
+      };
+      const pdfDoc = await PDFDocument.load(await pdfFile.arrayBuffer());
+      const embedImg = async b64 => {
+        const header = b64.split(",")[0].toLowerCase();
+        const buf = b64ToBuffer(b64);
+        return (header.includes("jpeg") || header.includes("jpg")) ? pdfDoc.embedJpg(buf) : pdfDoc.embedPng(buf);
+      };
+      const sigImg   = await embedImg(signature);
+      const stampImg = carimbo ? await embedImg(carimbo) : null;
+      const pdfPages = pdfDoc.getPages();
+      for (let i = 0; i < pdfPages.length; i++) {
+        const page = pdfPages[i];
+        const { width, height } = page.getSize();
+        if (stampImg && stampPos.pageIdx === i) {
+          const d  = stampImg.scaleToFit(90, 90);
+          const px = (stampPos.xPct / 100) * width;
+          const py = height - (stampPos.yPct / 100) * height - d.height;
+          page.drawImage(stampImg, { x: Math.max(0, px), y: Math.max(0, py), width: d.width, height: d.height });
+        }
+        if (sigPos.pageIdx === i) {
+          const sd = sigImg.scaleToFit(160, 55);
+          const px = (sigPos.xPct / 100) * width;
+          const py = height - (sigPos.yPct / 100) * height - sd.height;
+          page.drawImage(sigImg, { x: Math.max(0, px), y: Math.max(0, py), width: sd.width, height: sd.height });
+        }
+      }
+      const saved = await pdfDoc.save();
+      const buf = saved.buffer.slice(saved.byteOffset, saved.byteOffset + saved.byteLength);
+      const url = URL.createObjectURL(new Blob([buf], { type:"application/pdf" }));
+      setSignedUrl(url); setStatus("done");
+    } catch(e) {
+      console.error(e);
+      setErrMsg("Erro ao processar o PDF. Verifique se o arquivo não está protegido por senha.");
+      setStatus("error");
+    }
+  }
+
+  function handleDownload() {
+    if (!signedUrl || !pdfFile) return;
+    const a = document.createElement("a");
+    a.href = signedUrl;
+    a.download = pdfFile.name.replace(/\.pdf$/i,"") + "_assinado.pdf";
+    a.click();
+  }
+
+  function startDrag(which, e, pageIdx) {
+    e.preventDefault(); e.stopPropagation();
+    const el = pageRefs.current[pageIdx];
+    if (!el) return;
+    const rect = el.getBoundingClientRect();
+    const pos  = which === "sig" ? sigPos : stampPos;
+    dragOffsetRef.current = {
+      x: (e.clientX - rect.left) - (pos.xPct / 100) * rect.width,
+      y: (e.clientY - rect.top)  - (pos.yPct / 100) * rect.height,
+      pageIdx,
+    };
+    setDragging(which);
+  }
+
+  function onContainerDrag(e) {
+    if (!dragging) return;
+    // Find which page the mouse is currently over
+    let targetIdx  = dragOffsetRef.current.pageIdx;
+    let targetRect = null;
+    for (let i = 0; i < pageRefs.current.length; i++) {
+      const el = pageRefs.current[i];
+      if (!el) continue;
+      const r = el.getBoundingClientRect();
+      if (e.clientY >= r.top && e.clientY <= r.bottom) { targetIdx = i; targetRect = r; break; }
+    }
+    if (!targetRect) {
+      const el = pageRefs.current[targetIdx];
+      if (el) targetRect = el.getBoundingClientRect();
+    }
+    if (!targetRect) return;
+    const newX = Math.max(0, Math.min(88, ((e.clientX - targetRect.left - dragOffsetRef.current.x) / targetRect.width)  * 100));
+    const newY = Math.max(0, Math.min(92, ((e.clientY - targetRect.top  - dragOffsetRef.current.y) / targetRect.height) * 100));
+    dragOffsetRef.current.pageIdx = targetIdx;
+    if (dragging === "sig") setSigPos({ xPct: newX, yPct: newY, pageIdx: targetIdx });
+    else setStampPos({ xPct: newX, yPct: newY, pageIdx: targetIdx });
+  }
+
+  function stopDrag() { setDragging(null); }
+
+  const dragStyle = (pos, which) => ({
+    position:"absolute",
+    left:`${pos.xPct}%`, top:`${pos.yPct}%`,
+    height:"7%", maxWidth:"28%",
+    objectFit:"contain",
+    cursor: dragging === which ? "grabbing" : "grab",
+    borderRadius:4, padding:3,
+    background:"rgba(255,255,255,0.92)",
+    border:`2px dashed ${dragging === which ? "#6366f1" : "rgba(99,102,241,0.7)"}`,
+    boxShadow:"0 2px 10px rgba(0,0,0,0.2)",
+    userSelect:"none",
+  });
+
+  const canSign = pdfFile && signature && pagesData.length > 0;
+
+  return (
+    <div style={{ height:"100vh", display:"flex", flexDirection:"column", background:t.pageBg, ...FF }}>
+
+      {/* Header */}
+      <div style={{ background:t.header, padding:"0 24px", display:"flex", alignItems:"center", gap:14, height:58, flexShrink:0, zIndex:50, boxShadow:"0 2px 12px rgba(0,0,0,0.4)" }}>
+        <button onClick={onBack} style={{ background:"rgba(255,255,255,0.08)", border:"1px solid rgba(255,255,255,0.12)", color:"#94a3b8", borderRadius:8, padding:"6px 14px", cursor:"pointer", fontSize:13, ...FF }}>← Voltar</button>
+        <div style={{ display:"flex", alignItems:"center", gap:10 }}>
+          <span style={{ fontSize:20 }}>📄</span>
+          <span style={{ color:"#f8fafc", fontWeight:800, fontSize:16 }}>Ponto Digital</span>
+        </div>
+        {(signature || carimbo) && pagesData.length > 0 && (
+          <span style={{ fontSize:11, color:"rgba(167,139,250,0.8)", marginLeft:8 }}>
+            Arraste a assinatura/carimbo para a posição desejada no documento
+          </span>
+        )}
+        <div style={{ marginLeft:"auto", display:"flex", alignItems:"center", gap:12 }}>
+          <DarkToggle />
+          <Avatar name={user.name} color={user.color||"#6366f1"} size={30} />
+          <span style={{ color:"#cbd5e1", fontWeight:500, fontSize:13 }}>{user.name}</span>
+        </div>
+      </div>
+
+      {loading ? (
+        <div style={{ flex:1, display:"flex", alignItems:"center", justifyContent:"center", color:t.textMuted, fontSize:15 }}>Carregando...</div>
+      ) : (
+        <div style={{ flex:1, display:"grid", gridTemplateColumns:"240px 1fr", overflow:"hidden" }}>
+
+          {/* ── Painel esquerdo: controles ── */}
+          <div style={{ borderRight:`1px solid ${t.border}`, padding:16, display:"flex", flexDirection:"column", gap:14, overflowY:"auto", background:t.card }}>
+
+            <div style={{ background:signature?"#f0fdf4":"#fffbeb", border:`1px solid ${signature?"#86efac":"#fcd34d"}`, borderRadius:12, padding:"12px 14px", display:"flex", alignItems:"flex-start", gap:10 }}>
+              <span style={{ fontSize:18, flexShrink:0 }}>{signature?"✅":"⚠️"}</span>
+              <div>
+                <div style={{ fontWeight:700, fontSize:13, color:signature?"#166534":"#92400e" }}>{signature ? "Assinatura ok" : "Sem assinatura"}</div>
+                <div style={{ fontSize:11, color:signature?"#15803d":"#b45309", marginTop:2 }}>{signature ? "Arraste no documento →" : "Solicite ao administrador."}</div>
+              </div>
+            </div>
+
+            <div style={{ background:t.pageBg, border:`1px solid ${t.border}`, borderRadius:12, padding:14 }}>
+              <div style={{ fontWeight:700, fontSize:13, color:t.text, marginBottom:10 }}>PDF do Ponto</div>
+              {!pdfFile ? (
+                <label style={{ display:"block", cursor:"pointer" }}>
+                  <div
+                    onDragOver={e=>{e.preventDefault(); e.currentTarget.style.borderColor="#6366f1";}}
+                    onDragLeave={e=>{e.currentTarget.style.borderColor=t.border;}}
+                    onDrop={e=>{e.preventDefault(); handlePdf(e.dataTransfer.files[0]);}}
+                    style={{ border:`2px dashed ${t.border}`, borderRadius:10, padding:"24px 12px", textAlign:"center", transition:"border-color 0.2s" }}>
+                    <div style={{ fontSize:28, marginBottom:6 }}>📎</div>
+                    <div style={{ fontWeight:600, fontSize:12, color:t.text }}>Clique ou arraste o PDF</div>
+                  </div>
+                  <input type="file" accept="application/pdf,.pdf" style={{ display:"none" }} onChange={e=>{handlePdf(e.target.files?.[0]); e.target.value="";}} />
+                </label>
+              ) : (
+                <div style={{ display:"flex", alignItems:"center", gap:8, border:`1px solid ${t.border}`, borderRadius:8, padding:"8px 12px" }}>
+                  <span style={{ fontSize:18 }}>📄</span>
+                  <div style={{ flex:1, minWidth:0 }}>
+                    <div style={{ fontWeight:600, fontSize:11, color:t.text, overflow:"hidden", textOverflow:"ellipsis", whiteSpace:"nowrap" }}>{pdfFile.name}</div>
+                    <div style={{ fontSize:10, color:t.textMuted }}>{(pdfFile.size/1024).toFixed(0)} KB · {pagesData.length || "?"} pág.</div>
+                  </div>
+                  <button onClick={()=>{if(signedUrl)URL.revokeObjectURL(signedUrl); setPdfFile(null); setPagesData([]); setStatus("idle"); setSignedUrl(null);}}
+                    style={{ background:"#fee2e2", border:"none", borderRadius:6, padding:"4px 8px", cursor:"pointer", fontSize:12, color:"#dc2626" }}>✕</button>
+                </div>
+              )}
+            </div>
+
+            <div style={{ marginTop:"auto", display:"flex", flexDirection:"column", gap:8 }}>
+              {status === "idle" && (
+                <button onClick={handleSign} disabled={!canSign}
+                  style={{ width:"100%", padding:"12px", borderRadius:8, border:"none", fontWeight:600, fontSize:14, cursor:canSign?"pointer":"not-allowed", background:canSign?"#6366f1":"#e2e8f0", color:canSign?"#fff":t.textMuted, ...FF }}>
+                  ✍️  Assinar PDF
+                </button>
+              )}
+              {status === "processing" && (
+                <button disabled style={{ width:"100%", padding:13, borderRadius:12, border:"none", fontWeight:700, fontSize:14, background:"#e2e8f0", color:t.textMuted, cursor:"not-allowed", ...FF }}>⏳  Processando…</button>
+              )}
+              {status === "done" && (<>
+                <button onClick={handleDownload} style={{ width:"100%", padding:"12px", borderRadius:8, border:"none", fontWeight:600, fontSize:14, cursor:"pointer", background:"#16a34a", color:"#fff", ...FF }}>Baixar PDF Assinado</button>
+                <button onClick={()=>{setStatus("idle");setSignedUrl(null);}} style={{ width:"100%", padding:11, borderRadius:12, border:`1px solid ${t.border}`, fontWeight:600, fontSize:13, cursor:"pointer", background:t.btnSecBg, color:t.btnSecText, ...FF }}>Assinar outro PDF</button>
+              </>)}
+              {status === "error" && (<>
+                <div style={{ background:"#fee2e2", border:"1px solid #fca5a5", borderRadius:10, padding:"10px 12px", fontSize:12, color:"#dc2626" }}>⚠️ {errMsg}</div>
+                <button onClick={()=>setStatus("idle")} style={{ width:"100%", padding:11, borderRadius:12, border:`1px solid ${t.border}`, fontWeight:600, fontSize:13, cursor:"pointer", background:t.btnSecBg, color:t.btnSecText, ...FF }}>Tentar novamente</button>
+              </>)}
+            </div>
+
+          </div>
+
+          {/* ── Área direita: PDF renderizado com overlays arrastáveis ── */}
+          <div
+            style={{ overflow:"auto", background:"#374151", cursor: dragging ? "grabbing" : "default", userSelect:"none" }}
+            onMouseMove={onContainerDrag}
+            onMouseUp={stopDrag}
+            onMouseLeave={stopDrag}
+          >
+            {pagesLoading ? (
+              <div style={{ height:"100%", display:"flex", flexDirection:"column", alignItems:"center", justifyContent:"center", gap:12 }}>
+                <div style={{ fontSize:28 }}>⏳</div>
+                <span style={{ fontSize:13, color:"rgba(255,255,255,0.6)" }}>Carregando documento…</span>
+              </div>
+            ) : pagesData.length > 0 ? (
+              <div style={{ padding:"24px 40px", display:"flex", flexDirection:"column", gap:20, alignItems:"center" }}>
+                {pagesData.map((pg, idx) => (
+                  <div
+                    key={idx}
+                    ref={el => pageRefs.current[idx] = el}
+                    style={{ position:"relative", width:"100%", maxWidth:900, boxShadow:"0 4px 24px rgba(0,0,0,0.5)", background:"#fff" }}
+                  >
+                    {pg.dataUrl ? (
+                      <img src={pg.dataUrl} draggable={false} style={{ display:"block", width:"100%", height:"auto", pointerEvents:"none" }} />
+                    ) : (
+                      <div style={{ paddingBottom:`${(pg.pdfH/pg.pdfW)*100}%`, position:"relative", background:"#fff" }}>
+                        <div style={{ position:"absolute", inset:0 }}>
+                          {[10,20,30,40,50,60,70,80,90].map(y => (
+                            <div key={y} style={{ position:"absolute", top:`${y}%`, left:"6%", right:"6%", height:1, background:"rgba(0,0,0,0.05)" }} />
+                          ))}
+                        </div>
+                      </div>
+                    )}
+                    {/* Stamp on this page */}
+                    {carimbo && stampPos.pageIdx === idx && (
+                      <img src={carimbo} alt="carimbo" draggable={false}
+                        onMouseDown={e => startDrag("stamp", e, idx)}
+                        style={dragStyle(stampPos, "stamp")} />
+                    )}
+                    {/* Signature on this page */}
+                    {signature && sigPos.pageIdx === idx && (
+                      <img src={signature} alt="assinatura" draggable={false}
+                        onMouseDown={e => startDrag("sig", e, idx)}
+                        style={dragStyle(sigPos, "sig")} />
+                    )}
+                    {pagesData.length > 1 && (
+                      <div style={{ position:"absolute", top:8, right:10, fontSize:10, color:"rgba(0,0,0,0.3)", fontWeight:600 }}>
+                        {idx + 1} / {pagesData.length}
+                      </div>
+                    )}
+                  </div>
+                ))}
+              </div>
+            ) : (
+              <div style={{ height:"100%", display:"flex", flexDirection:"column", alignItems:"center", justifyContent:"center", gap:14 }}>
+                <span style={{ fontSize:56, opacity:0.2 }}>📄</span>
+                <span style={{ fontSize:14, color:"rgba(255,255,255,0.4)" }}>Carregue um PDF para começar</span>
+              </div>
+            )}
+          </div>
+
+        </div>
+      )}
+    </div>
+  );
+}
+
 export default function App() {
   const [view,     setView]     = useState(() => new URLSearchParams(window.location.search).get("relatorio")==="1" ? "public-report" : "login");
   const [user,     setUser]     = useState(null);
@@ -3995,6 +5746,24 @@ export default function App() {
   });
 
   const t = dark ? THEMES.dark : THEMES.light;
+
+  useEffect(() => {
+    const s = document.createElement("style");
+    s.setAttribute("data-ds", "1");
+    s.textContent = `
+      *, *::before, *::after { box-sizing: border-box; }
+      body { margin: 0; -webkit-font-smoothing: antialiased; }
+      button, input, select, textarea { font-family: 'Segoe UI', system-ui, sans-serif; }
+      button:focus-visible, a:focus-visible { outline: 2px solid #6366f1; outline-offset: 2px; }
+      input:focus, select:focus, textarea:focus { box-shadow: 0 0 0 3px rgba(99,102,241,0.15) !important; border-color: #6366f1 !important; }
+      ::-webkit-scrollbar { width: 6px; height: 6px; }
+      ::-webkit-scrollbar-track { background: transparent; }
+      ::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 3px; }
+      ::-webkit-scrollbar-thumb:hover { background: #94a3b8; }
+    `;
+    if (!document.querySelector("[data-ds]")) document.head.appendChild(s);
+    return () => { const el = document.querySelector("[data-ds]"); if (el) document.head.removeChild(el); };
+  }, []);
 
   const logout = () => { if (user) deleteDoc(doc(db,"presence",user.id)).catch(()=>{}); setUser(null); setView("login"); setOpenPage(null); };
 
@@ -4046,9 +5815,11 @@ export default function App() {
       window.removeEventListener("keydown",  onActivity);
     };
   }, [user?.id]);
-  const goHome    = () => { setOpenPage(null); setView("home"); };
-  const goPage    = (pg, emps) => { setOpenPage(pg); setOpenEmps(emps||[]); setView("page"); };
-  const goGestao  = () => setView("gestao");
+  const goHome       = () => { setOpenPage(null); setView("home"); };
+  const goPonto      = () => setView("ponto");
+  const goSatisfacao = () => setView("satisfacao");
+  const goPage       = (pg, emps) => { setOpenPage(pg); setOpenEmps(emps||[]); setView("page"); };
+  const goGestao     = () => setView("gestao");
 
   return (
     <ThemeCtx.Provider value={{ t, dark, toggle }}>
@@ -4057,7 +5828,9 @@ export default function App() {
       {view === "login"   && <LoginScreen onLogin={u=>{setUser(u);setView("home");}} onAdmin={()=>setView("admin")} />}
       {view === "page"    && openPage && <PageDetail page={openPage} initEmployees={openEmps} user={user} onBack={goHome} onLogout={logout} />}
       {view === "gestao"  && <GestaoComercial onBack={() => setView("admin")} onLogout={logout} />}
-      {view === "home"    && user && <HomeScreen user={user} onOpenPage={goPage} onLogout={logout} onGestao={goGestao} />}
+      {view === "home"        && user && <HomeScreen user={user} onOpenPage={goPage} onLogout={logout} onGestao={goGestao} onPonto={goPonto} onSatisfacao={goSatisfacao} />}
+      {view === "ponto"       && user && <PontoDigital user={user} onBack={goHome} />}
+      {view === "satisfacao"  && user && <SatisfacaoView user={user} onBack={goHome} />}
     </ThemeCtx.Provider>
   );
 }

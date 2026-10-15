@@ -446,11 +446,17 @@ test("testar conexão: reporta Vindi e banco separadamente; banco com problema n
   assert.equal(ok.body.conexao, "ok");
   assert.equal(ok.body.vindi.ok, true);
   assert.equal(ok.body.banco.ok, true);
-  const semBanco = criarHandlerStatus({ getDb: () => { throw new Error("8 RESOURCE_EXHAUSTED: Quota exceeded."); }, lerConfig: () => CFG, criarCliente: () => ({ testarConexao: async () => true }) });
-  const r = await chamarSimples(semBanco, req({ acao: "testar" }));
+  // banco que lê mas não grava (cota de gravação excedida)
+  const dbFake = { collection: () => ({ doc: () => ({ get: async () => ({}), set: async () => { throw new Error("8 RESOURCE_EXHAUSTED: Quota exceeded."); } }) }) };
+  const semGravar = criarHandlerStatus({ getDb: () => dbFake, lerConfig: () => CFG, criarCliente: () => ({ testarConexao: async () => true }) });
+  const r = await chamarSimples(semGravar, req({ acao: "testar" }));
   assert.equal(r.body.conexao, "erro");
   assert.equal(r.body.vindi.ok, true, "a Vindi foi testada mesmo com o banco falhando");
-  assert.match(r.body.banco.mensagem, /cota excedida/);
+  assert.equal(r.body.etapas.leitura.ok, true);
+  assert.equal(r.body.etapas.gravacao.ok, false);
+  assert.match(r.body.banco.mensagem, /gravação ✗ cota diária do Firebase excedida/);
+  const semDb = criarHandlerStatus({ getDb: () => { throw new Error("conta inválida"); }, lerConfig: () => CFG, criarCliente: () => ({ testarConexao: async () => true }) });
+  assert.match((await chamarSimples(semDb, req({ acao: "testar" }))).body.mensagem, /conta inválida/);
 });
 
 test("conta de serviço de outro projeto é identificada no status", async () => {

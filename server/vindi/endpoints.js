@@ -84,21 +84,34 @@ export function criarHandlerStatus({ getDb, lerConfig, criarCliente }) {
     if (!cfg.apiConfigurada) return responder(res, 503, { ...base, erro: "Integração não configurada (defina VINDI_AMBIENTE e VINDI_API_KEY na Vercel)." });
 
     if (acao === "testar") {
-      // Diagnóstico: testa a Vindi e o banco separadamente (um problema no banco não esconde o resultado da Vindi).
-      let db = null, banco;
-      try {
-        db = getDb();
-        if (!(await dentroDoLimite(db, "admin", 10))) return responder(res, 429, { erro: "Muitas solicitações. Aguarde um minuto." });
-        banco = { ok: true, mensagem: "Banco de dados (Firestore) acessível pelo servidor." };
-      } catch (e) {
-        console.error("testar: banco", e?.message);
-        const cota = /RESOURCE_EXHAUSTED|quota/i.test(e?.message || "");
-        banco = { ok: false, mensagem: cota ? "O Firestore recusou por cota excedida (plano/limite do projeto Firebase da conta de serviço)." : `Falha ao acessar o Firestore: ${String(e?.message || "erro desconhecido").slice(0, 200)}` };
-      }
-      let vindi;
-      try { await criarCliente(cfg).testarConexao(); vindi = { ok: true, mensagem: `Conexão com a Vindi (${cfg.ambiente === "producao" ? "produção" : "teste/sandbox"}) funcionando.` }; }
-      catch (e) { vindi = { ok: false, mensagem: e instanceof ErroVindi ? e.message : "Falha ao testar a conexão com a Vindi." }; }
-      return responder(res, 200, { ...base, conexao: vindi.ok && banco.ok ? "ok" : "erro", vindi, banco, mensagem: `Vindi: ${vindi.ok ? "✓" : "✗"} ${vindi.mensagem}  ·  Banco: ${banco.ok ? "✓" : "✗"} ${banco.mensagem}` });
+      // Diagnóstico: cada etapa com tempo próprio (leitura no banco, gravação no banco, Vindi),
+      // em paralelo — um problema numa etapa não esconde o resultado das outras.
+      const etapa = async (nome, ms, fn) => {
+        const t0 = Date.now();
+        let timer;
+        try {
+          await Promise.race([fn(), new Promise((_, rej) => { timer = setTimeout(() => rej(new Error(`sem resposta em ${ms / 1000} s`)), ms); })]);
+          console.log(`testar: ${nome} ok em ${Date.now() - t0} ms`);
+          return { ok: true, ms: Date.now() - t0 };
+        } catch (e) {
+          const m = String(e?.message || "erro desconhecido");
+          console.error(`testar: ${nome} falhou em ${Date.now() - t0} ms: ${m.slice(0, 200)}`);
+          const cota = /RESOURCE_EXHAUSTED|quota/i.test(m);
+          return { ok: false, ms: Date.now() - t0, mensagem: e instanceof ErroVindi ? e.message : cota ? "cota diária do Firebase excedida" : m.slice(0, 200) };
+        } finally { clearTimeout(timer); }
+      };
+      let db = null;
+      try { db = getDb(); } catch (e) { return responder(res, 200, { ...base, conexao: "erro", mensagem: `Banco: ✗ ${String(e.message).slice(0, 200)}` }); }
+      const [leitura, gravacao, vindi] = await Promise.all([
+        etapa("leitura", 8000, () => db.collection(COL_TRAVAS).doc("diagnostico").get()),
+        etapa("gravacao", 8000, () => db.collection(COL_TRAVAS).doc("diagnostico").set({ em: new Date().toISOString() })),
+        etapa("vindi", 15000, () => criarCliente(cfg).testarConexao()),
+      ]);
+      const txt = (r, ok) => r.ok ? `✓ ${ok}` : `✗ ${r.mensagem}`;
+      const banco = { ok: leitura.ok && gravacao.ok, mensagem: `leitura ${txt(leitura, "ok")}, gravação ${txt(gravacao, "ok")}` };
+      const vin = { ok: vindi.ok, mensagem: vindi.ok ? `Conexão com a Vindi (${cfg.ambiente === "producao" ? "produção" : "teste/sandbox"}) funcionando.` : vindi.mensagem };
+      return responder(res, 200, { ...base, conexao: vin.ok && banco.ok ? "ok" : "erro", vindi: vin, banco, etapas: { leitura, gravacao, vindi },
+        mensagem: `Vindi: ${vin.ok ? "✓" : "✗"} ${vin.mensagem}  ·  Banco: ${banco.mensagem}` });
     }
 
     const db = getDb();

@@ -1,10 +1,10 @@
 // Modo seguro: roda o app no localhost usando o EMULADOR do Firestore carregado com uma
 // cópia do backup. Nada do que for feito aqui chega ao banco real, e tudo é descartado ao fechar.
-// Uso: npm run dev:seguro         → faz um backup novo (só leitura) e carrega ele
-//      npm run dev:seguro:rapido  → usa o backup mais recente que já existe
-//      DEV_SEGURO_BACKUP="caminho\da\pasta" npm run dev:seguro:rapido → usa um backup específico
-// (Este script é chamado por "firebase emulators:exec", que sobe o emulador antes. Opções depois
-//  de "--" no npm iriam para o firebase, não para este script — por isso os comandos separados.)
+// Uso: npm run dev:seguro       → usa o backup mais recente que já existe (não gasta leituras do banco real)
+//      npm run dev:seguro:novo  → faz um backup novo (lê o banco inteiro, ~5.500 leituras) e carrega ele
+//      DEV_SEGURO_BACKUP="caminho\da\pasta" npm run dev:seguro → usa um backup específico
+// (O plano gratuito do Firebase permite 50 mil leituras/dia — por isso o padrão NÃO faz backup novo.
+//  Opções depois de "--" no npm iriam para o firebase, não para este script — por isso os comandos separados.)
 import { readFileSync, readdirSync, existsSync } from "node:fs";
 import { createHash } from "node:crypto";
 import { join, resolve } from "node:path";

@@ -3,7 +3,37 @@
 // • Gravações são sempre de um documento por vez (saveItem/deleteItem) — nada é apagado em massa.
 // • Dados padrão só são criados quando o SERVIDOR confirma que a coleção está vazia
 //   (uma leitura vazia do cache, sem internet, não conta).
-import { collection, doc, getDocs, getDocsFromServer, setDoc, deleteDoc, writeBatch, runTransaction } from "firebase/firestore";
+import { collection, doc, getDocs, getDocsFromServer, setDoc, deleteDoc, writeBatch, runTransaction, query, where, getCountFromServer } from "firebase/firestore";
+
+// Contadores de uma planilha (cartões do Admin e da tela inicial) usando a CONTAGEM do Firestore:
+// custa 1 leitura a cada 1.000 registros contados, em vez de 1 leitura por registro — importante
+// no plano gratuito (50 mil leituras/dia). tiposOrgao = rótulos dos tipos de "órgão".
+// Se a contagem falhar (ex.: índice ausente), usa o método antigo: lê os registros e conta.
+export async function contarPagina(db, pageId, tiposOrgao) {
+  const base = collection(db, "records");
+  const contar = async (...filtros) => (await getCountFromServer(query(base, where("pageId", "==", pageId), ...filtros))).data().count;
+  try {
+    const orgao = (tiposOrgao || []).slice(0, 30);
+    const [total, resolved, inProgress, orgEmAt, orgPend] = await Promise.all([
+      contar(),
+      contar(where("status", "==", "Resolvido")),
+      contar(where("status", "==", "Em atendimento")),
+      orgao.length ? contar(where("status", "==", "Em atendimento"), where("tipo", "in", orgao)) : 0,
+      orgao.length ? contar(where("status", "==", "Pendente"), where("tipo", "in", orgao)) : 0,
+    ]);
+    return { total, resolved, inProgress, opAbertos: orgEmAt + orgPend };
+  } catch (e) {
+    console.warn("contarPagina: contagem indisponível, lendo os registros", pageId, e?.code || e?.message);
+    const recs = (await getDocs(query(base, where("pageId", "==", pageId)))).docs.map(d => d.data());
+    const org = new Set(tiposOrgao || []);
+    return {
+      total: recs.length,
+      resolved: recs.filter(r => r.status === "Resolvido").length,
+      inProgress: recs.filter(r => r.status === "Em atendimento").length,
+      opAbertos: recs.filter(r => org.has(r.tipo) && (r.status === "Em atendimento" || r.status === "Pendente")).length,
+    };
+  }
+}
 
 export async function getCol(db, colName) {
   const snap = await getDocs(collection(db, colName));

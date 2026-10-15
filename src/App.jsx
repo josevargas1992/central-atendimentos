@@ -708,6 +708,15 @@ function ConfirmDialog({ message, onConfirm, onCancel }) {
 
 // Regras de segurança das leituras e gravações: ver src/data.js
 const loadOrSeed = (colName, seed) => store.loadOrSeed(db, colName, seed);
+
+// Contadores dos cartões de planilha (Admin e tela inicial) via contagem do Firestore — ver store.contarPagina.
+const normOrgao = s => (s||"").toLowerCase().normalize("NFD").replace(/[̀-ͯ]/g,"");
+const tiposDeOrgao = tps => tps.filter(tp => normOrgao(tp.department).includes("orgao") || normOrgao(tp.label).includes("orgao")).map(tp => tp.label);
+async function contarPaginas(pgs, tps) {
+  const org = tiposDeOrgao(tps), cnts = {};
+  await Promise.all(pgs.map(async p => { cnts[p.id] = await store.contarPagina(db, p.id, org); }));
+  return cnts;
+}
 const saveItem   = (colName, item) => store.saveItem(db, colName, item);
 const deleteItem = (colName, id)   => store.deleteItem(db, colName, id);
 
@@ -722,13 +731,6 @@ async function loadPages() {
   }) ?? [SEED_PAGE];
 }
 
-async function loadRecords(pageId) {
-  try {
-    const q = query(collection(db, "records"), where("pageId", "==", pageId));
-    const snap = await getDocs(q);
-    return snap.docs.map(d => d.data()).sort((a, b) => a.id - b.id);
-  } catch { return []; }
-}
 
 async function deletePageRecords(pageId) {
   try {
@@ -1946,15 +1948,7 @@ function AdminPanel({ onBack, onGestao }) {
       setEmployees(emps); setPages(sorted); setTipos(tps); setDepartments(depts);
       const { carimbo: car, ...restSigs } = allSigs;
       setSigs(restSigs); setCarimboDB(car || null); setSigsLoaded(true);
-      const tpMap = Object.fromEntries(tps.map(tp=>[tp.label,tp]));
-      const normStr = s=>(s||"").toLowerCase().normalize("NFD").replace(/[̀-ͯ]/g,"");
-      const isOrgao = tipo => { const tp=tpMap[tipo]; return normStr(tp?.department).includes("orgao")||normStr(tipo).includes("orgao"); };
-      const cnts = {};
-      await Promise.all(sorted.map(async p => {
-        const recs = await loadRecords(p.id);
-        cnts[p.id] = { total:recs.length, resolved:recs.filter(r=>r.status==="Resolvido").length, inProgress:recs.filter(r=>r.status==="Em atendimento").length, opAbertos:recs.filter(r=>isOrgao(r.tipo)&&(r.status==="Em atendimento"||r.status==="Pendente")).length };
-      }));
-      setCounts(cnts); setLoading(false);
+      setCounts(await contarPaginas(sorted, tps)); setLoading(false);
     })();
   }, []);
 
@@ -3699,15 +3693,7 @@ function HomeScreen({ user, onOpenPage, onLogout, onGestao, onPonto, onSatisfaca
         .filter(p => p.responsibleId === user.id)
         .sort((a,b)=>b.year!==a.year?b.year-a.year:b.month-a.month);
       setEmployees(emps); setPages(sorted);
-      const tpMap = Object.fromEntries(tps.map(tp=>[tp.label,tp]));
-      const normStr = s=>(s||"").toLowerCase().normalize("NFD").replace(/[̀-ͯ]/g,"");
-      const isOrgao = tipo => { const tp=tpMap[tipo]; return normStr(tp?.department).includes("orgao")||normStr(tipo).includes("orgao"); };
-      const cnts = {};
-      await Promise.all(sorted.map(async p => {
-        const recs = await loadRecords(p.id);
-        cnts[p.id] = { total:recs.length, resolved:recs.filter(r=>r.status==="Resolvido").length, inProgress:recs.filter(r=>r.status==="Em atendimento").length, opAbertos:recs.filter(r=>isOrgao(r.tipo)&&(r.status==="Em atendimento"||r.status==="Pendente")).length };
-      }));
-      setCounts(cnts); setLoading(false);
+      setCounts(await contarPaginas(sorted, tps)); setLoading(false);
     })();
   }, []);
 

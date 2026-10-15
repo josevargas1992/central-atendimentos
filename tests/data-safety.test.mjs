@@ -118,3 +118,30 @@ test("NOVO: dois atendentes salvando ao mesmo tempo — nenhum registro se perde
   assert.equal(new Set(docs.map(d => d.cliente)).size, 2 * N, "nenhum registro foi sobrescrito");
   for (const d of snap.docs) assert.equal(d.id, `${PAGE}-${d.data().id}`, "id do documento bate com o número");
 });
+
+// ── Contadores das planilhas via contagem do Firestore ─────────────────
+import { contarPagina } from "../src/data.js";
+
+test("contagem dos cartões dá os mesmos números que contar registro por registro", async () => {
+  const db = newClient("contagem");
+  const tipos = ["Ofício Órgão", "Outro", "Órgão Público"];
+  const status = ["Resolvido", "Em atendimento", "Pendente"];
+  const b = writeBatch(db);
+  const recs = [];
+  for (let i = 1; i <= 60; i++) {
+    const r = { id: i, pageId: i % 4 === 0 ? "outra" : "pg1", status: status[i % 3], tipo: tipos[i % 3] };
+    recs.push(r); b.set(doc(db, "records", `${r.pageId}-${i}`), r);
+  }
+  await b.commit();
+  const orgao = ["Ofício Órgão", "Órgão Público"];
+  const daPg = recs.filter(r => r.pageId === "pg1");
+  const esperado = {
+    total: daPg.length,
+    resolved: daPg.filter(r => r.status === "Resolvido").length,
+    inProgress: daPg.filter(r => r.status === "Em atendimento").length,
+    opAbertos: daPg.filter(r => orgao.includes(r.tipo) && r.status !== "Resolvido").length,
+  };
+  assert.deepEqual(await contarPagina(db, "pg1", orgao), esperado);
+  assert.deepEqual(await contarPagina(db, "pg1", []), { ...esperado, opAbertos: 0 });
+  assert.deepEqual(await contarPagina(db, "vazia", orgao), { total: 0, resolved: 0, inProgress: 0, opAbertos: 0 });
+});

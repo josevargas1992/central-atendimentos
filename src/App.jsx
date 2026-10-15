@@ -1,6 +1,7 @@
 ﻿import { useState, useEffect, useRef, createContext, useContext } from "react";
 import { collection, doc, getDocs, getDoc, setDoc, updateDoc, arrayUnion, deleteDoc, writeBatch, query, where, onSnapshot } from "firebase/firestore";
-import { db, isSafeMode } from "./firebase";
+import { db, auth, isSafeMode } from "./firebase";
+import { signInWithEmailAndPassword, signOut, onAuthStateChanged } from "firebase/auth";
 import * as store from "./data";
 import { consultarLogike, descreverTesteLogike } from "./logike";
 import { satNorm, satParseData, satAgruparPorMes, satDistribuir } from "./satisfacao";
@@ -2051,7 +2052,7 @@ function AdminPanel({ onBack, onGestao }) {
 
       <div style={{ background:t.header, padding:"0 24px", display:"flex", alignItems:"center", justifyContent:"space-between", height:58, position:"sticky", top:0, zIndex:50, boxShadow:"0 2px 12px rgba(0,0,0,0.4)" }}>
         <div style={{ display:"flex", alignItems:"center", gap:14 }}>
-          <button onClick={onBack} style={{ background:"rgba(255,255,255,0.08)", border:"1px solid rgba(255,255,255,0.12)", color:"#94a3b8", borderRadius:8, padding:"6px 14px", cursor:"pointer", fontSize:13, ...FF }}>← Sair do Admin</button>
+          <button onClick={()=>{ signOut(auth).catch(()=>{}); onBack(); }} style={{ background:"rgba(255,255,255,0.08)", border:"1px solid rgba(255,255,255,0.12)", color:"#94a3b8", borderRadius:8, padding:"6px 14px", cursor:"pointer", fontSize:13, ...FF }}>← Sair do Admin</button>
           <div style={{ display:"flex", alignItems:"center", gap:10 }}>
             <div style={{ width:32, height:32, borderRadius:9, background:"linear-gradient(135deg,#f59e0b,#ef4444)", display:"flex", alignItems:"center", justifyContent:"center", fontSize:16 }}>⚙️</div>
             <span style={{ color:"#f8fafc", fontWeight:800, fontSize:16 }}>Painel Administrativo</span>
@@ -2087,7 +2088,7 @@ function AdminPanel({ onBack, onGestao }) {
         <PresenceBar employees={employees} />
         {loadError ? <LoadErrorBox /> : loading ? <div style={{ textAlign:"center", padding:80, color:t.textMuted }}>Carregando...</div> : (
 
-          tab === "planilhas" ? (
+          tab === "planilhas" ? (<><FreshdeskAdminCard />{
             pages.length === 0 ? (
               <div style={{ textAlign:"center", padding:80, background:t.card, borderRadius:18, border:`1px solid ${t.border}` }}>
                 <div style={{ fontSize:56, marginBottom:16 }}>📋</div>
@@ -2107,7 +2108,7 @@ function AdminPanel({ onBack, onGestao }) {
                 ))}
               </div>
             )
-          ) : tab === "atendentes" ? (
+          }</>) : tab === "atendentes" ? (
             employees.length === 0 ? (
               <div style={{ textAlign:"center", padding:80, background:t.card, borderRadius:18, border:`1px solid ${t.border}` }}>
                 <div style={{ fontSize:52, marginBottom:14 }}>👥</div>
@@ -3189,6 +3190,81 @@ function InadVindiSecao({ reg, box, titulo }) {
           </details>
         )}
       </>)}
+    </div>
+  );
+}
+
+// Card do Admin: teste de conexão com o Freshdesk. O servidor só executa para um administrador
+// autenticado no Firebase (token conferido no servidor + UID em ADMIN_UIDS na Vercel).
+// Mostra apenas se funcionou ou o erro — nada sobre o agente nem sobre a chave.
+const ERROS_LOGIN = {
+  "auth/invalid-credential": "E-mail ou senha incorretos.",
+  "auth/invalid-email": "E-mail inválido.",
+  "auth/user-disabled": "Esta conta foi desativada.",
+  "auth/too-many-requests": "Muitas tentativas. Aguarde alguns minutos.",
+  "auth/network-request-failed": "Sem conexão com a internet.",
+  "auth/operation-not-allowed": "O login por e-mail/senha ainda não foi ativado no Firebase.",
+};
+function FreshdeskAdminCard() {
+  const { t, dark } = useTheme();
+  const [aberto,  setAberto]  = useState(false);
+  const [usuario, setUsuario] = useState(null);
+  const [email,   setEmail]   = useState("");
+  const [senha,   setSenha]   = useState("");
+  const [ocupado, setOcupado] = useState(false);
+  const [msg,     setMsg]     = useState(null); // { ok, texto }
+
+  useEffect(() => onAuthStateChanged(auth, setUsuario), []);
+
+  const entrar = async () => {
+    if (ocupado || !email.trim() || !senha) return;
+    setOcupado(true); setMsg(null);
+    try { await signInWithEmailAndPassword(auth, email.trim(), senha); setSenha(""); }
+    catch (e) { setMsg({ ok:false, texto: ERROS_LOGIN[e?.code] || "Não foi possível entrar." }); }
+    setOcupado(false);
+  };
+  const testar = async () => {
+    if (ocupado || !usuario) return;
+    setOcupado(true); setMsg(null);
+    try {
+      const token = await usuario.getIdToken();
+      const res = await fetch("/api/freshdesk/status", { headers: { Authorization: `Bearer ${token}` } });
+      if (!(res.headers.get("content-type") || "").includes("application/json")) {
+        setMsg({ ok:false, texto:"O teste só funciona no site publicado (ou com 'vercel dev'), não no localhost comum." });
+      } else {
+        const d = await res.json();
+        setMsg(res.ok && d.conectado ? { ok:true, texto:"✓ Conexão com o Freshdesk funcionando." } : { ok:false, texto:`✗ ${d.erro || "Falha no teste."}` });
+      }
+    } catch { setMsg({ ok:false, texto:"✗ Sem conexão com o servidor." }); }
+    setOcupado(false);
+  };
+  const inp = { ...INP(t), padding:"8px 12px", fontSize:13 };
+
+  return (
+    <div style={{ marginBottom:20, background:t.card, border:`1px solid ${t.border}`, borderRadius:14, overflow:"hidden" }}>
+      <button onClick={()=>setAberto(v=>!v)} style={{ width:"100%", display:"flex", justifyContent:"space-between", alignItems:"center", padding:"14px 18px", background:"transparent", border:"none", cursor:"pointer", ...FF }}>
+        <span style={{ fontWeight:600, fontSize:14, color:t.text }}>🎧 Integração Freshdesk</span>
+        <span style={{ color:t.textMuted, fontSize:12 }}>{aberto ? "▲ Fechar" : "▼ Abrir"}</span>
+      </button>
+      {aberto && (
+        <div style={{ padding:"14px 18px 18px", borderTop:`1px solid ${t.border}` }}>
+          {!usuario ? (<>
+            <div style={{ fontSize:12.5, color:t.textSub, marginBottom:10 }}>Para testar a conexão, entre com a <b>conta de administrador do Firebase</b>.</div>
+            <div style={{ display:"flex", gap:8, flexWrap:"wrap" }}>
+              <input value={email} onChange={e=>setEmail(e.target.value)} placeholder="E-mail" type="email" autoComplete="username" style={{ ...inp, flex:"1 1 200px", width:"auto" }} />
+              <input value={senha} onChange={e=>setSenha(e.target.value)} placeholder="Senha" type="password" autoComplete="current-password" onKeyDown={e=>e.key==="Enter"&&entrar()} style={{ ...inp, flex:"1 1 160px", width:"auto" }} />
+              <button onClick={entrar} disabled={ocupado || !email.trim() || !senha} style={{ ...btnP(ocupado || !email.trim() || !senha), flex:"none", padding:"8px 18px", fontSize:13 }}>{ocupado ? "Entrando…" : "Entrar"}</button>
+            </div>
+          </>) : (<>
+            <div style={{ display:"flex", alignItems:"center", gap:10, flexWrap:"wrap", fontSize:12.5, color:t.textSub }}>
+              <span>Conectado como <b style={{ color:t.text }}>{usuario.email}</b></span>
+              <button onClick={()=>{ signOut(auth); setMsg(null); }} style={{ ...BTN_SEC(t), padding:"5px 12px", fontSize:12 }}>Sair</button>
+            </div>
+            <button onClick={testar} disabled={ocupado} style={{ ...BTN_SEC(t), marginTop:12, padding:"8px 16px", fontSize:13, opacity:ocupado?0.6:1 }}>{ocupado ? "Testando…" : "Testar conexão"}</button>
+          </>)}
+          {msg && <div style={{ marginTop:12, padding:"8px 12px", borderRadius:8, fontSize:12.5, background:msg.ok?(dark?"rgba(34,197,94,0.1)":"#f0fdf4"):(dark?"rgba(239,68,68,0.1)":"#fef2f2"), color:msg.ok?(dark?"#86efac":"#166534"):(dark?"#fca5a5":"#b91c1c") }}>{msg.texto}</div>}
+        </div>
+      )}
     </div>
   );
 }

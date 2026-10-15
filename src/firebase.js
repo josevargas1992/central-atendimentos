@@ -1,5 +1,6 @@
 import { initializeApp } from "firebase/app";
 import { getFirestore, connectFirestoreEmulator } from "firebase/firestore";
+import { getAuth } from "firebase/auth";
 
 // No navegador as variáveis vêm do Vite; nos scripts de teste (Node), de process.env.
 const env = import.meta.env ?? process.env;
@@ -15,6 +16,8 @@ const firebaseConfig = {
 
 export const app = initializeApp(firebaseConfig);
 export const db  = getFirestore(app);
+// Login do Firebase (Authentication). Etapa 1: usado só pelo administrador nas integrações protegidas.
+export const auth = getAuth(app);
 
 // Com VITE_FIRESTORE_EMULATOR=127.0.0.1:8080 o app usa o emulador local em vez do banco real.
 export const isSafeMode = !!env.VITE_FIRESTORE_EMULATOR;

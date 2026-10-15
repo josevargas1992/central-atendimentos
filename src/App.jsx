@@ -1,9 +1,10 @@
 ﻿import { useState, useEffect, useRef, createContext, useContext } from "react";
-import { collection, doc, getDocs, getDoc, setDoc, deleteDoc, writeBatch, query, where, onSnapshot } from "firebase/firestore";
+import { collection, doc, getDocs, getDoc, setDoc, updateDoc, arrayUnion, deleteDoc, writeBatch, query, where, onSnapshot } from "firebase/firestore";
 import { db, isSafeMode } from "./firebase";
 import * as store from "./data";
 import { consultarLogike, descreverTesteLogike } from "./logike";
 import { satNorm, satParseData, satAgruparPorMes, satDistribuir } from "./satisfacao";
+import { INAD_STATUS, inadLerPlanilha, inadResumoParcelas, inadTempo, inadTempoTexto, inadPlanejarImportacao, inadVindiValido } from "./inadimplentes";
 import * as XLSX from "xlsx";
 
 // ── Constants ─────────────────────────────────────────────────────────
@@ -475,10 +476,21 @@ function RecordRow({ r, employees, tiposMap, togglePrio, togglePesquisa, updateS
 
 // ──────────────────────────────────────────────────────────────────────
 
-const CHANGELOG_VERSION = "1.5.1";
+const CHANGELOG_VERSION = "1.6.0";
 const CHANGELOG_KEY = `changelog_seen_${CHANGELOG_VERSION}`;
 
 const CHANGELOG = [
+  {
+    version: "1.6.0",
+    date: "Out 2026",
+    entries: [
+      { type: "novo",     text: "Controle de Inadimplentes: acompanhe clientes inadimplentes com data de inadimplência, parcelas pagas e pendentes, valor em aberto e status (Inadimplente, Cancelado, Regularizado)." },
+      { type: "novo",     text: "Inadimplentes: registre observações de cobrança, compromissos (ex.: promessa de pagamento) e marque clientes como importantes." },
+      { type: "novo",     text: "Inadimplentes: botão \"Consultar na Vindi\" abre a cobrança do cliente em uma nova aba." },
+      { type: "novo",     text: "Inadimplentes: pesquisa, filtros (status, sistema, responsável, há mais de 1 mês) e ordenação." },
+      { type: "melhoria", text: "O acesso aos Inadimplentes é liberado individualmente pelo administrador no cadastro de cada atendente." },
+    ],
+  },
   {
     version: "1.5.1",
     date: "Out 2026",
@@ -1315,13 +1327,16 @@ function EmployeeModal({ employee, departments=[], onSave, onClose }) {
   const [password,   setPassword]   = useState(employee?.password   || "");
   const [color,      setColor]      = useState(employee?.color      || PALETTE[0]);
   const [department, setDepartment] = useState(employee?.department || departments[0]?.name || "");
+  const [acessoInad, setAcessoInad] = useState(!!employee?.acessoInadimplentes);
+  const [statusInad, setStatusInad] = useState(!!employee?.inadAlterarStatus);
   const [showPw,     setShowPw]     = useState(false);
   const [error,      setError]      = useState("");
 
   const submit = () => {
     if (!name.trim())     return setError("O nome é obrigatório.");
     if (!password.trim()) return setError("A senha é obrigatória.");
-    onSave({ id: employee?.id || (slugify(name.trim()) || String(Date.now())), name:name.trim(), password:password.trim(), color, department });
+    onSave({ ...employee, id: employee?.id || (slugify(name.trim()) || String(Date.now())), name:name.trim(), password:password.trim(), color, department,
+      acessoInadimplentes: acessoInad, inadAlterarStatus: acessoInad && statusInad });
   };
 
   return (
@@ -1353,6 +1368,18 @@ function EmployeeModal({ employee, departments=[], onSave, onClose }) {
             Nenhum departamento cadastrado ainda
           </div>
         )}
+      </Field>
+      <Field label="Permissões">
+        <div style={{ display:"flex", flexDirection:"column", gap:8 }}>
+          <label style={{ display:"flex", alignItems:"center", gap:10, cursor:"pointer" }}>
+            <input type="checkbox" checked={acessoInad} onChange={e=>setAcessoInad(e.target.checked)} style={{ width:17, height:17, cursor:"pointer", accentColor:"#6366f1" }} />
+            <span style={{ fontSize:14, color:t.textSub, fontWeight:500 }}>💰 Acessar Inadimplentes</span>
+          </label>
+          <label style={{ display:"flex", alignItems:"center", gap:10, cursor:acessoInad?"pointer":"not-allowed", opacity:acessoInad?1:0.45, paddingLeft:27 }}>
+            <input type="checkbox" checked={acessoInad && statusInad} disabled={!acessoInad} onChange={e=>setStatusInad(e.target.checked)} style={{ width:17, height:17, cursor:"inherit", accentColor:"#6366f1" }} />
+            <span style={{ fontSize:14, color:t.textSub, fontWeight:500 }}>Pode alterar o status dos inadimplentes</span>
+          </label>
+        </div>
       </Field>
       <Field label="Cor do perfil">
         <div style={{ display:"flex", flexWrap:"wrap", gap:8 }}>
@@ -2036,13 +2063,14 @@ function AdminPanel({ onBack, onGestao }) {
         </div>
       </div>
 
-      <div style={{ background:t.metaBg, borderBottom:`1px solid ${t.metaBorder}`, padding:"10px 24px", display:"flex", alignItems:"center", gap:4 }}>
+      <div style={{ background:t.metaBg, borderBottom:`1px solid ${t.metaBorder}`, padding:"10px 24px", display:"flex", alignItems:"center", gap:4, flexWrap:"wrap" }}>
         {tabBtn("planilhas",     "📋  Planilhas")}
         {tabBtn("atendentes",    "👥  Atendentes")}
         {tabBtn("tipos",         "🏷️  Tipos")}
         {tabBtn("departamentos", "🏢  Departamentos")}
         {tabBtn("assinaturas",   "✍️  Assinaturas")}
         {tabBtn("satisfacao",    "⭐  Satisfação")}
+        {tabBtn("inadimplentes", "💰  Inadimplentes")}
         <button onClick={onGestao} style={{ padding:"10px 22px", border:"none", borderRadius:10, fontWeight:700, fontSize:14, cursor:"pointer", ...FF, background:"transparent", color:"#60a5fa", transition:"all 0.15s" }}>📊  Gestão</button>
         <span style={{ marginLeft:"auto", fontSize:12, color:t.textMuted }}>
           {tab==="planilhas"     && `${pages.length} planilha${pages.length!==1?"s":""}`}
@@ -2197,6 +2225,8 @@ function AdminPanel({ onBack, onGestao }) {
 
               </div>
             )
+          ) : tab === "inadimplentes" ? (
+            <><InadImportacao employees={employees} /><InadimplentesPanel user={null} isAdmin employees={employees} /></>
           ) : tab === "satisfacao" ? (
             <SatisfacaoAdminTab employees={employees} />
           ) : (
@@ -2467,7 +2497,53 @@ function RecordModal({ record, employees, tipos=[], pageDepartment="Geral", page
 
 // ── Agenda Modal ─────────────────────────────────────────────────────
 
-function AgendaModal({ record, onSave, onClose }) {
+// Avisa (som + janela) quando um compromisso está a 5 minutos de acontecer.
+// Usado pela planilha de atendimentos e pelo Controle de Inadimplentes.
+function useCompromissoAlerta(itens) {
+  const [alerta, setAlerta] = useState(null);
+  const avisados = useRef(new Set());
+  useEffect(() => {
+    const check = () => {
+      const now = new Date();
+      itens.forEach(r => {
+        if (!r.agendamento || r.agendamento.concluido || avisados.current.has(r.id)) return;
+        const diff = (new Date(r.agendamento.dataHora) - now) / 60000;
+        if (diff >= 0 && diff <= 5) { avisados.current.add(r.id); setAlerta(r); playBeep(); }
+      });
+    };
+    check();
+    const timer = setInterval(check, 30000);
+    return () => clearInterval(timer);
+  }, [itens]);
+  return [alerta, setAlerta];
+}
+
+function CompromissoAlerta({ item, nome, subtitulo, onDispensar, onVer }) {
+  return (
+    <Overlay z={1200}>
+      <div style={{ background:"#fff", borderRadius:20, padding:"28px 32px", maxWidth:400, width:"90%", boxShadow:"0 20px 50px rgba(0,0,0,0.3)", ...FF }}>
+        <div style={{ fontSize:38, textAlign:"center", marginBottom:10 }}>⏰</div>
+        <h3 style={{ margin:"0 0 4px", fontSize:17, fontWeight:700, color:"#1e293b", textAlign:"center" }}>Compromisso em 5 minutos!</h3>
+        <p style={{ margin:"0 0 16px", fontSize:13, color:"#64748b", textAlign:"center" }}>Verifique os detalhes abaixo</p>
+        <div style={{ background:"#fefce8", border:"1px solid #fde68a", borderRadius:10, padding:"12px 14px", marginBottom:12, fontSize:13 }}>
+          <div style={{ fontWeight:700, color:"#92400e", marginBottom:4 }}>📅 {item.agendamento.titulo}</div>
+          {item.agendamento.dataHora && <div style={{ color:"#78350f", marginBottom:4 }}>🕐 {new Date(item.agendamento.dataHora).toLocaleString("pt-BR",{day:"2-digit",month:"2-digit",hour:"2-digit",minute:"2-digit"})}</div>}
+          {item.agendamento.descricao && <div style={{ color:"#92400e" }}>📝 {item.agendamento.descricao}</div>}
+        </div>
+        <div style={{ background:"#f1f5f9", borderRadius:10, padding:"10px 14px", fontSize:13, color:"#475569", marginBottom:20 }}>
+          <div style={{ fontWeight:600, marginBottom:2 }}>{nome}</div>
+          <div>{subtitulo}</div>
+        </div>
+        <div style={{ display:"flex", gap:8 }}>
+          <button onClick={onDispensar} style={{ flex:1, padding:"10px 0", background:"#f1f5f9", border:"none", borderRadius:10, color:"#475569", fontWeight:600, cursor:"pointer", ...FF }}>Dispensar</button>
+          <button onClick={onVer} style={{ flex:2, padding:"10px 0", background:"#f59e0b", border:"none", borderRadius:8, color:"#fff", fontWeight:600, cursor:"pointer", ...FF }}>Ver compromisso</button>
+        </div>
+      </div>
+    </Overlay>
+  );
+}
+
+function AgendaModal({ record, onSave, onClose, nome, subtitulo }) {
   const { t } = useTheme();
   const inp = INP(t);
   const bS  = BTN_SEC(t);
@@ -2492,8 +2568,8 @@ function AgendaModal({ record, onSave, onClose }) {
       }
     >
       <div style={{ background:t.pageBg, borderRadius:12, padding:"12px 16px", marginBottom:16, fontSize:13 }}>
-        <div style={{ fontWeight:700, color:t.text, marginBottom:3 }}>{record.cliente}</div>
-        <div style={{ color:t.textMuted }}>Via {record.via} · {record.tipo} · {record.data}</div>
+        <div style={{ fontWeight:700, color:t.text, marginBottom:3 }}>{nome ?? record.cliente}</div>
+        <div style={{ color:t.textMuted }}>{subtitulo ?? `Via ${record.via} · ${record.tipo} · ${record.data}`}</div>
         {ag.concluido && <div style={{ marginTop:6, color:"#16a34a", fontWeight:600, fontSize:12 }}>✅ Compromisso concluído</div>}
       </div>
       <Field label="Título do compromisso">
@@ -2839,9 +2915,601 @@ function SatisfacaoView({ user, onBack }) {
   );
 }
 
+// ── Controle de Inadimplentes ────────────────────────────────────────
+
+const INAD_STATUS_CFG = {
+  "Inadimplente": { bar:"#ef4444", bg:"#fee2e2", text:"#b91c1c", darkBg:"rgba(239,68,68,0.14)",   darkText:"#f87171", darkBorder:"rgba(239,68,68,0.25)" },
+  "Cancelado":    { bar:"#94a3b8", bg:"#f1f5f9", text:"#475569", darkBg:"rgba(148,163,184,0.12)", darkText:"#cbd5e1", darkBorder:"rgba(148,163,184,0.25)" },
+  "Regularizado": { bar:"#22c55e", bg:"#dcfce7", text:"#15803d", darkBg:"rgba(34,197,94,0.12)",   darkText:"#4ade80", darkBorder:"rgba(34,197,94,0.22)" },
+};
+const fmtDataBR = iso => iso ? iso.slice(0, 10).split("-").reverse().join("/") : "—";
+const INAD_FKEY = "inad_filters";
+
+function InadStatusBadge({ status }) {
+  const { dark } = useTheme();
+  const c = INAD_STATUS_CFG[status] || INAD_STATUS_CFG.Cancelado;
+  return <span style={{ display:"inline-flex", alignItems:"center", gap:5, background:dark?c.darkBg:c.bg, color:dark?c.darkText:c.text, border:`1px solid ${dark?c.darkBorder:"transparent"}`, padding:"3px 10px 3px 7px", borderRadius:20, fontSize:11.5, fontWeight:600, whiteSpace:"nowrap" }}><span style={{ width:6, height:6, borderRadius:"50%", background:c.bar }} />{status}</span>;
+}
+
+// Parcelas como "bolinhas": verde = paga, cinza = não paga.
+function InadParcelasMini({ reg, size=7 }) {
+  const { dark } = useTheme();
+  return (
+    <div style={{ display:"flex", gap:2, flexWrap:"wrap" }}>
+      {(reg.parcelas||[]).map(p => <span key={p.n} title={`Parcela ${p.n}: ${p.paga?"paga":"não paga"}`} style={{ width:size, height:size, borderRadius:2, background:p.paga?"#22c55e":(dark?"#334155":"#e2e8f0") }} />)}
+    </div>
+  );
+}
+
+const SireneIcon = () => (
+  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+    <line x1="12" y1="1" x2="12" y2="3"/><line x1="4.22" y1="4.22" x2="5.64" y2="5.64"/><line x1="19.78" y1="4.22" x2="18.36" y2="5.64"/>
+    <line x1="1.5" y1="10" x2="3.5" y2="10"/><line x1="20.5" y1="10" x2="22.5" y2="10"/>
+    <path d="M7 18h10l1 3H6l1-3z"/><path d="M8 18V9.5a4 4 0 0 1 8 0V18"/><path d="M10 13h1.5"/>
+  </svg>
+);
+const AlertaIcon = () => <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>;
+const EditarIcon = () => <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>;
+const ExcluirIcon = () => <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2"/></svg>;
+
+function InadRow({ r, employees, perms, onAbrir, onImportante, onAgenda, onEditar, onExcluir }) {
+  const { t, dark } = useTheme();
+  const [hover, setHover] = useState(false);
+  const cfg = INAD_STATUS_CFG[r.status] || INAD_STATUS_CFG.Cancelado;
+  const s = inadResumoParcelas(r);
+  const tempo = inadTempo(r.dataInadimplencia);
+  const resp = employees.find(e => e.id === r.responsavelId);
+  const ativo = r.status === "Inadimplente";
+  const bg = dark ? (hover ? "#1c3048" : (r.prioridade ? "#1d1f13" : "#1e293b")) : (hover ? "#f6f9fc" : (r.prioridade ? "#fff8f1" : "#fff"));
+  const stop = fn => e => { e.stopPropagation(); fn(); };
+  return (
+    <div onClick={onAbrir} onMouseEnter={()=>setHover(true)} onMouseLeave={()=>setHover(false)}
+      style={{ position:"relative", display:"flex", alignItems:"stretch", flexWrap:"wrap", background:bg, borderRadius:10, border:`1px solid ${dark?"rgba(255,255,255,0.07)":"#e8edf2"}`, overflow:"hidden", cursor:"pointer", transition:"background 0.12s, box-shadow 0.12s", boxShadow:hover?(dark?"0 2px 14px rgba(0,0,0,0.35)":"0 2px 10px rgba(0,0,0,0.07)"):"none", ...FF }}>
+      <div style={{ width:4, alignSelf:"stretch", background:cfg.bar, flexShrink:0 }} />
+
+      {/* Cliente */}
+      <div style={{ flex:"1 1 260px", minWidth:0, padding:"11px 16px", display:"flex", flexDirection:"column", justifyContent:"center", gap:4 }}>
+        <div style={{ fontWeight:600, fontSize:13.5, color:t.text, overflow:"hidden", textOverflow:"ellipsis", whiteSpace:"nowrap" }}>{r.nome}</div>
+        <div style={{ display:"flex", alignItems:"center", gap:5, flexWrap:"wrap", fontSize:11, color:t.textMuted }}>
+          {r.numero && <><span style={{ fontVariantNumeric:"tabular-nums" }}>#{r.numero}</span><Sep dark={dark} /></>}
+          {r.programa && <><span>{r.programa}{r.copias ? ` · ${r.copias} cópia${r.copias>1?"s":""}` : ""}</span><Sep dark={dark} /></>}
+          <span style={{ overflow:"hidden", textOverflow:"ellipsis", whiteSpace:"nowrap", maxWidth:220 }}>{r.email || "sem e-mail"}</span>
+        </div>
+      </div>
+
+      {/* Inadimplência */}
+      <div style={{ flex:"0 0 170px", padding:"11px 16px", display:"flex", flexDirection:"column", justifyContent:"center", gap:3 }}>
+        <span style={{ fontSize:10, fontWeight:700, color:t.textMuted, textTransform:"uppercase", letterSpacing:0.4 }}>Inadimplente desde</span>
+        <span style={{ fontSize:13, color:t.text, fontWeight:600 }}>{fmtDataBR(r.dataInadimplencia)}</span>
+        {tempo && <span style={{ fontSize:11, fontWeight:600, color: ativo && tempo.maisDeUmMes ? "#ef4444" : t.textMuted }}>{inadTempoTexto(tempo)}</span>}
+      </div>
+
+      {/* Parcelas */}
+      <div style={{ flex:"0 0 190px", padding:"11px 16px", display:"flex", flexDirection:"column", justifyContent:"center", gap:4 }}>
+        <span style={{ fontSize:12.5, color:t.text, whiteSpace:"nowrap" }}><b>{s.naoPagas}</b> pendente{s.naoPagas!==1?"s":""} <span style={{ color:t.textMuted }}>· {s.pagas}/{s.total} pagas</span></span>
+        <InadParcelasMini reg={r} />
+      </div>
+
+      {/* Valor + responsável */}
+      <div style={{ flex:"0 0 150px", padding:"11px 16px", display:"flex", flexDirection:"column", justifyContent:"center", gap:4 }}>
+        <span style={{ fontSize:14, fontWeight:800, color: ativo ? (dark?"#f87171":"#b91c1c") : t.textMuted }}>{r.valorAReceber != null ? gcFmtBRL(r.valorAReceber) : "—"}</span>
+        {resp
+          ? <div style={{ display:"flex", alignItems:"center", gap:4 }}><Avatar name={resp.name} color={resp.color} size={14} /><span style={{ fontSize:11, color:t.textMuted }}>{resp.name}</span></div>
+          : <span style={{ fontSize:11, color:t.textMuted }}>sem responsável</span>}
+      </div>
+
+      {/* Status + ações */}
+      <div style={{ display:"flex", alignItems:"center", gap:5, padding:"8px 13px", flexShrink:0, marginLeft:"auto" }}>
+        <InadStatusBadge status={r.status} />
+        <IconBtn title={r.prioridade?"Remover de importantes":"Marcar como importante"} active={!!r.prioridade} activeColor="#f97316" onClick={stop(onImportante)} dark={dark} t={t}><SireneIcon /></IconBtn>
+        {r.agendamento && !r.agendamento.concluido && (
+          <IconBtn title={r.agendamento.titulo || "Compromisso"} active activeColor="#f59e0b" onClick={stop(onAgenda)} dark={dark} t={t}><AlertaIcon /></IconBtn>
+        )}
+        {perms.editar  && <IconBtn title="Editar" onClick={stop(onEditar)} dark={dark} t={t}><EditarIcon /></IconBtn>}
+        {perms.excluir && <IconBtn title="Excluir" danger onClick={stop(onExcluir)} dark={dark} t={t}><ExcluirIcon /></IconBtn>}
+      </div>
+    </div>
+  );
+}
+
+// Formulário de cadastro/edição manual.
+function InadFormModal({ reg, employees, podeStatus, onSave, onClose }) {
+  const { t } = useTheme();
+  const inp = INP(t), sel = SEL(t), bS = { ...BTN_SEC(t), flex:1 };
+  const editing = !!reg;
+  const [f, setF] = useState(() => ({
+    nome: reg?.nome || "", email: reg?.email || "", programa: reg?.programa || "", serie: reg?.serie || "",
+    copias: reg?.copias ?? "", numero: reg?.numero || "", idFatura: reg?.idFatura || "",
+    dataInadimplencia: reg?.dataInadimplencia || new Date().toISOString().slice(0, 10),
+    numParcelas: reg?.numParcelas ?? 12, pagas: (reg?.parcelas||[]).filter(p=>p.paga).map(p=>p.n),
+    valorAReceber: reg?.valorAReceber != null ? gcFmtBRL(reg.valorAReceber) : "",
+    status: reg?.status || "Inadimplente", responsavelId: reg?.responsavelId || "", vindiUrl: reg?.vindiUrl || "",
+  }));
+  const [erro, setErro] = useState("");
+  const set = k => v => { setF(p => ({ ...p, [k]: v })); setErro(""); };
+  const togglePaga = n => setF(p => ({ ...p, pagas: p.pagas.includes(n) ? p.pagas.filter(x=>x!==n) : [...p.pagas, n] }));
+  const total = Math.max(0, Math.min(60, parseInt(f.numParcelas) || 0));
+
+  const submit = () => {
+    if (!f.nome.trim()) return setErro("O nome do cliente é obrigatório.");
+    if (f.vindiUrl.trim() && !inadVindiValido(f.vindiUrl)) return setErro("O link da Vindi precisa começar com https:// e ser do domínio vindi.com.br.");
+    const antigas = Object.fromEntries((reg?.parcelas||[]).map(p => [p.n, p]));
+    const parcelas = Array.from({ length: total }, (_, i) => {
+      const n = i + 1, paga = f.pagas.includes(n);
+      return { n, paga, dataPagamento: paga ? (antigas[n]?.paga ? antigas[n].dataPagamento ?? null : null) : null };
+    });
+    onSave({
+      nome: f.nome.trim(), email: f.email.trim(), programa: f.programa.trim(), serie: f.serie.trim(),
+      copias: f.copias === "" ? null : Number(f.copias), numero: String(f.numero).trim(), idFatura: String(f.idFatura).trim(),
+      dataInadimplencia: f.dataInadimplencia || null, numParcelas: total, parcelas,
+      valorAReceber: f.valorAReceber ? Number(gcParseBRL(f.valorAReceber)) : null,
+      status: f.status, responsavelId: f.responsavelId || null, vindiUrl: f.vindiUrl.trim(),
+    });
+  };
+
+  const grid2 = { display:"grid", gridTemplateColumns:"repeat(auto-fit, minmax(200px, 1fr))", gap:"0 16px" };
+  return (
+    <ModalShell title={editing ? "✏️  Editar inadimplente" : "➕  Novo inadimplente"} onClose={onClose} maxWidth={620}
+      footer={<><button onClick={onClose} style={bS}>Cancelar</button><button onClick={submit} style={btnP(false)}>{editing ? "Salvar Alterações" : "Cadastrar"}</button></>}>
+      <Field label="Nome do cliente *"><input value={f.nome} onChange={e=>set("nome")(e.target.value)} style={inp} autoFocus /></Field>
+      <div style={grid2}>
+        <Field label="E-mail"><input value={f.email} onChange={e=>set("email")(e.target.value)} style={inp} type="email" /></Field>
+        <Field label="Sistema contratado"><input value={f.programa} onChange={e=>set("programa")(e.target.value)} style={inp} placeholder="Ex.: Previus" /></Field>
+        <Field label="Nº Série"><input value={f.serie} onChange={e=>set("serie")(e.target.value)} style={inp} /></Field>
+        <Field label="Nº de cópias"><input value={f.copias} onChange={e=>set("copias")(e.target.value.replace(/\D/g,""))} style={inp} inputMode="numeric" /></Field>
+        <Field label="Nº (identificação)"><input value={f.numero} onChange={e=>set("numero")(e.target.value)} style={inp} /></Field>
+        <Field label="IDFatura / IDAssinatura"><input value={f.idFatura} onChange={e=>set("idFatura")(e.target.value)} style={inp} /></Field>
+        <Field label="Data de inadimplência"><input type="date" value={f.dataInadimplencia||""} onChange={e=>set("dataInadimplencia")(e.target.value)} style={inp} /></Field>
+        <Field label="Valor em aberto"><input value={f.valorAReceber} onChange={e=>set("valorAReceber")(gcFmtBRLLive(e.target.value))} style={inp} placeholder="R$ 0,00" /></Field>
+        <Field label="Status">
+          <select value={f.status} onChange={e=>set("status")(e.target.value)} style={sel} disabled={!podeStatus}>
+            {INAD_STATUS.map(s => <option key={s}>{s}</option>)}
+          </select>
+        </Field>
+        <Field label="Colaborador responsável">
+          <select value={f.responsavelId} onChange={e=>set("responsavelId")(e.target.value)} style={sel}>
+            <option value="">— Sem responsável —</option>
+            {employees.map(e => <option key={e.id} value={e.id}>{e.name}</option>)}
+          </select>
+        </Field>
+      </div>
+      <Field label={`Parcelas (${total}) — marque as pagas`}>
+        <div style={{ display:"flex", alignItems:"center", gap:10, marginBottom:8 }}>
+          <input value={f.numParcelas} onChange={e=>set("numParcelas")(e.target.value.replace(/\D/g,""))} style={{ ...inp, width:90 }} inputMode="numeric" />
+          <span style={{ fontSize:12, color:t.textMuted }}>quantidade contratada</span>
+        </div>
+        <div style={{ display:"flex", flexWrap:"wrap", gap:6 }}>
+          {Array.from({ length: total }, (_, i) => i + 1).map(n => {
+            const paga = f.pagas.includes(n);
+            return <button key={n} type="button" onClick={()=>togglePaga(n)} title={paga?"Paga":"Não paga"}
+              style={{ minWidth:38, padding:"6px 8px", borderRadius:8, border:`1.5px solid ${paga?"#22c55e":t.border}`, background:paga?"#dcfce7":t.inputBg, color:paga?"#15803d":t.textMuted, fontWeight:700, fontSize:12, cursor:"pointer", ...FF }}>{n}{paga?" ✓":""}</button>;
+          })}
+        </div>
+      </Field>
+      <Field label="Link de retorno da Vindi">
+        <input value={f.vindiUrl} onChange={e=>set("vindiUrl")(e.target.value)} style={inp} type="url" placeholder="https://app.vindi.com.br/..." autoComplete="off" />
+      </Field>
+      {erro && <p style={{ color:"#dc2626", fontSize:13, margin:"-4px 0 0", fontWeight:500 }}>{erro}</p>}
+    </ModalShell>
+  );
+}
+
+// Detalhes completos + acompanhamento (observações, compromisso, importante, status).
+function InadDetalheModal({ reg, employees, perms, user, onClose, onStatus, onImportante, onAgenda, onEditar, onObservacao }) {
+  const { t, dark } = useTheme();
+  const [obs, setObs] = useState("");
+  const s = inadResumoParcelas(reg);
+  const tempo = inadTempo(reg.dataInadimplencia);
+  const resp = employees.find(e => e.id === reg.responsavelId);
+  const temVindi = inadVindiValido(reg.vindiUrl);
+  const box = { background:t.pageBg, border:`1px solid ${t.border}`, borderRadius:12, padding:"14px 16px" };
+  const titulo = txt => <div style={{ fontSize:11, fontWeight:700, color:t.textMuted, textTransform:"uppercase", letterSpacing:0.5, marginBottom:10 }}>{txt}</div>;
+  const linha = (rotulo, valor) => (
+    <div style={{ display:"flex", justifyContent:"space-between", gap:12, padding:"5px 0", borderBottom:`1px solid ${t.border}`, fontSize:13 }}>
+      <span style={{ color:t.textMuted }}>{rotulo}</span><span style={{ color:t.text, fontWeight:600, textAlign:"right", wordBreak:"break-word" }}>{valor ?? "—"}</span>
+    </div>
+  );
+  const enviarObs = () => { if (obs.trim()) { onObservacao(obs.trim()); setObs(""); } };
+  const observacoes = [...(reg.observacoes||[])].sort((a, b) => (b.data||"").localeCompare(a.data||""));
+
+  return (
+    <ModalShell title={reg.nome} onClose={onClose} maxWidth={820}
+      footer={<div style={{ display:"flex", gap:10, flexWrap:"wrap", width:"100%", justifyContent:"flex-end" }}>
+        <button disabled={!temVindi} title={temVindi ? "Abre a cobrança na Vindi em uma nova aba" : "Nenhum link válido da Vindi para este cliente"}
+          onClick={() => temVindi && window.open(reg.vindiUrl, "_blank", "noopener,noreferrer")}
+          style={{ ...BTN_SEC(t), opacity:temVindi?1:0.45, cursor:temVindi?"pointer":"not-allowed" }}>🔗 Consultar na Vindi</button>
+        {perms.editar && <button onClick={onEditar} style={BTN_SEC(t)}>✏️ Editar</button>}
+        <button onClick={onClose} style={{ ...btnP(false), flex:"none" }}>Fechar</button>
+      </div>}>
+      <div style={{ display:"flex", alignItems:"center", gap:10, flexWrap:"wrap", marginBottom:16 }}>
+        <InadStatusBadge status={reg.status} />
+        {perms.status && (
+          <select value={reg.status} onChange={e=>onStatus(e.target.value)} style={{ ...SEL(t), width:"auto", padding:"5px 10px", fontSize:12.5 }}>
+            {INAD_STATUS.map(st => <option key={st}>{st}</option>)}
+          </select>
+        )}
+        <button onClick={onImportante} style={{ display:"inline-flex", alignItems:"center", gap:6, padding:"5px 12px", borderRadius:8, cursor:"pointer", fontSize:12.5, fontWeight:600, border:`1px solid ${reg.prioridade?"#f9731655":t.border}`, background:reg.prioridade?"#f9731622":"transparent", color:reg.prioridade?"#f97316":t.textSub, ...FF }}>
+          <SireneIcon /> {reg.prioridade ? "Importante" : "Marcar como importante"}
+        </button>
+        <button onClick={onAgenda} style={{ display:"inline-flex", alignItems:"center", gap:6, padding:"5px 12px", borderRadius:8, cursor:"pointer", fontSize:12.5, fontWeight:600, border:`1px solid ${reg.agendamento&&!reg.agendamento.concluido?"#f59e0b55":t.border}`, background:reg.agendamento&&!reg.agendamento.concluido?"#f59e0b22":"transparent", color:reg.agendamento&&!reg.agendamento.concluido?"#d97706":t.textSub, ...FF }}>
+          📅 {reg.agendamento && !reg.agendamento.concluido ? `Compromisso: ${reg.agendamento.dataHora ? new Date(reg.agendamento.dataHora).toLocaleString("pt-BR",{day:"2-digit",month:"2-digit",hour:"2-digit",minute:"2-digit"}) : reg.agendamento.titulo}` : "Adicionar compromisso"}
+        </button>
+      </div>
+
+      <div style={{ display:"grid", gridTemplateColumns:"repeat(auto-fit, minmax(300px, 1fr))", gap:14, marginBottom:14 }}>
+        <div style={box}>
+          {titulo("Cliente")}
+          {linha("E-mail", reg.email || "—")}
+          {linha("Programa", reg.programa || "—")}
+          {linha("Nº Série", reg.serie || "—")}
+          {linha("Nº de cópias", reg.copias ?? "—")}
+          {linha("Nº (identificação)", reg.numero || "—")}
+          {linha("Responsável", resp ? resp.name : (reg.colaboradorPlanilha ? `${reg.colaboradorPlanilha} (planilha)` : "—"))}
+        </div>
+        <div style={box}>
+          {titulo("Financeiro")}
+          {linha("Inadimplente desde", fmtDataBR(reg.dataInadimplencia))}
+          {linha("Tempo", inadTempoTexto(tempo))}
+          {linha("Parcelas contratadas", s.total)}
+          {linha("Pagas", s.pagas)}
+          {linha("Pendentes (não pagas)", s.naoPagas)}
+          {linha("Última parcela paga", s.ultimaPaga ? `${s.ultimaPaga}ª` : "nenhuma")}
+          {linha("Valor em aberto", reg.valorAReceber != null ? gcFmtBRL(reg.valorAReceber) : "—")}
+          {reg.pagamento && linha("Forma de pagamento", reg.pagamento)}
+        </div>
+      </div>
+
+      <div style={{ ...box, marginBottom:14 }}>
+        {titulo("Parcelas")}
+        <div style={{ display:"grid", gridTemplateColumns:"repeat(auto-fill, minmax(92px, 1fr))", gap:8 }}>
+          {(reg.parcelas||[]).map(p => (
+            <div key={p.n} style={{ borderRadius:10, padding:"8px 10px", border:`1px solid ${p.paga?(dark?"rgba(34,197,94,0.3)":"#bbf7d0"):t.border}`, background:p.paga?(dark?"rgba(34,197,94,0.1)":"#f0fdf4"):t.card }}>
+              <div style={{ fontSize:11, color:t.textMuted, fontWeight:600 }}>Parcela {p.n}</div>
+              <div style={{ fontSize:12.5, fontWeight:700, color:p.paga?(dark?"#4ade80":"#15803d"):t.textSub }}>{p.paga ? "Paga" : "Não paga"}</div>
+              {p.paga && <div style={{ fontSize:10.5, color:t.textMuted }}>{p.dataPagamento ? fmtDataBR(p.dataPagamento) : "sem data"}</div>}
+            </div>
+          ))}
+        </div>
+        {s.comLacuna && <div style={{ marginTop:10, fontSize:12, color:dark?"#fbbf24":"#b45309" }}>⚠️ Há parcela não paga antes da última parcela paga.</div>}
+        <div style={{ marginTop:10, fontSize:11.5, color:t.textMuted }}>A planilha não informa datas de vencimento — "não paga" não significa necessariamente vencida. Referência oficial: data de inadimplência.</div>
+      </div>
+
+      <div style={box}>
+        {titulo(`Observações de cobrança (${observacoes.length})`)}
+        <div style={{ display:"flex", gap:8, marginBottom:12 }}>
+          <textarea value={obs} onChange={e=>setObs(e.target.value)} rows={2} placeholder="Ex.: Liguei, cliente prometeu pagar dia 20..." style={{ ...INP(t), resize:"vertical", flex:1 }}
+            onKeyDown={e=>{ if (e.key==="Enter" && (e.ctrlKey||e.metaKey)) enviarObs(); }} />
+          <button onClick={enviarObs} disabled={!obs.trim()} style={{ ...btnP(!obs.trim()), flex:"none", alignSelf:"flex-start" }}>Registrar</button>
+        </div>
+        {observacoes.length === 0
+          ? <div style={{ fontSize:12.5, color:t.textMuted }}>Nenhuma observação registrada.</div>
+          : observacoes.map(o => (
+            <div key={o.id} style={{ padding:"8px 0", borderTop:`1px solid ${t.border}` }}>
+              <div style={{ fontSize:11, color:t.textMuted, marginBottom:2 }}>{o.autorNome || "—"} · {o.data ? new Date(o.data).toLocaleString("pt-BR",{day:"2-digit",month:"2-digit",year:"numeric",hour:"2-digit",minute:"2-digit"}) : ""}</div>
+              <div style={{ fontSize:13, color:t.text, whiteSpace:"pre-wrap" }}>{o.texto}</div>
+            </div>
+          ))}
+      </div>
+    </ModalShell>
+  );
+}
+
+// Lista principal — usada pelo Admin (aba Inadimplentes) e pelos atendentes autorizados.
+function InadimplentesPanel({ user, isAdmin, employees: empsProp }) {
+  const { t } = useTheme();
+  const perms = {
+    editar:  isAdmin || !!user?.acessoInadimplentes,
+    excluir: isAdmin,
+    status:  isAdmin || !!user?.inadAlterarStatus,
+  };
+  const [regs,      setRegs]      = useState([]);
+  const [employees, setEmployees] = useState(empsProp || []);
+  const [loading,   setLoading]   = useState(true);
+  const [loadError, setLoadError] = useState(false);
+  const [form,      setForm]      = useState(null);   // null | { reg?: registro }
+  const [detalheId, setDetalheId] = useState(null);
+  const [agendaReg, setAgendaReg] = useState(null);
+  const [confirmId, setConfirmId] = useState(null);
+  const [toast,     setToast]     = useState("");
+  const [filters, setFilters] = useState(() => {
+    const base = { search:"", status:"Todos", programa:"Todos", responsavel:"Todos", tempo:"Todos", ordem:"dataAsc" };
+    try { return { ...base, ...JSON.parse(localStorage.getItem(INAD_FKEY) || "{}"), search:"" }; } catch { return base; }
+  });
+  const [alerta, setAlerta] = useCompromissoAlerta(regs);
+  const toastRef = useRef(null);
+  const showToast = msg => { setToast(msg); clearTimeout(toastRef.current); toastRef.current = setTimeout(()=>setToast(""), 3000); };
+  const setF = k => v => setFilters(p => ({ ...p, [k]: v }));
+
+  useEffect(() => { if (empsProp) setEmployees(empsProp); }, [empsProp]);
+  useEffect(() => {
+    if (!empsProp) loadEmployees().then(setEmployees).catch(() => {});
+    const unsub = onSnapshot(collection(db, "inadimplentes"),
+      snap => { setRegs(snap.docs.map(d => d.data())); setLoading(false); },
+      e => { console.error("Inadimplentes: falha ao carregar", e); setLoadError(true); setLoading(false); });
+    return () => unsub();
+  }, []);
+  useEffect(() => { try { const { search:_, ...salvar } = filters; localStorage.setItem(INAD_FKEY, JSON.stringify(salvar)); } catch {} }, [filters]);
+
+  // Gravação parcial (só os campos alterados) — não sobrescreve o que outra pessoa mudou ao mesmo tempo.
+  const atualizar = async (id, campos, ok) => {
+    try { await updateDoc(doc(db, "inadimplentes", id), campos); if (ok) showToast(ok); return true; }
+    catch (e) { console.error(e); showToast("❌  Erro ao salvar — nada foi alterado. Verifique a conexão."); return false; }
+  };
+
+  const salvarForm = async dados => {
+    const editando = form?.reg;
+    const conflito = dados.numero && regs.find(r => r.numero === dados.numero && r.id !== editando?.id);
+    if (conflito) { showToast(`⚠️  Já existe um registro com o Nº ${dados.numero} (${conflito.nome}).`); return; }
+    if (editando) {
+      if (!perms.status) delete dados.status;
+      if (await atualizar(editando.id, dados, "✓  Registro atualizado.")) setForm(null);
+    } else {
+      const novo = { id:`inad-m-${genId()}`, ...dados, status: perms.status ? dados.status : "Inadimplente",
+        prioridade:false, agendamento:null, observacoes:[], origem:"manual", criadoEm:new Date().toISOString(), criadoPor:user?.name || "Administrador" };
+      try { await saveItem("inadimplentes", novo); showToast("✓  Inadimplente cadastrado."); setForm(null); }
+      catch (e) { console.error(e); showToast("❌  Erro ao salvar — verifique a conexão."); }
+    }
+  };
+
+  const excluir = async () => {
+    try { await deleteItem("inadimplentes", confirmId); showToast("🗑️  Registro excluído."); if (detalheId === confirmId) setDetalheId(null); }
+    catch (e) { console.error(e); showToast("❌  Erro ao excluir — verifique a conexão."); }
+    setConfirmId(null);
+  };
+
+  const registrarObs = texto => atualizar(detalheId, { observacoes: arrayUnion({ id:genId(), texto, autorId:user?.id || "admin", autorNome:user?.name || "Administrador", data:new Date().toISOString() }) }, "✓  Observação registrada.");
+  // O AgendaModal da planilha também mexe no status; aqui o status do inadimplente não muda.
+  const salvarAgenda = async atualizado => { if (await atualizar(atualizado.id, { agendamento: atualizado.agendamento }, "✓  Compromisso salvo.")) setAgendaReg(null); };
+
+  const hoje = new Date();
+  const programas = [...new Set(regs.map(r => r.programa).filter(Boolean))].sort();
+  const busca = satNorm(filters.search);
+  const filtrados = regs.filter(r => {
+    if (busca && ![r.nome, r.email, r.programa, r.serie, r.numero, r.idFatura].some(v => satNorm(v).includes(busca))) return false;
+    if (filters.status !== "Todos" && r.status !== filters.status) return false;
+    if (filters.programa !== "Todos" && r.programa !== filters.programa) return false;
+    if (filters.responsavel === "nenhum" ? !!r.responsavelId : (filters.responsavel !== "Todos" && r.responsavelId !== filters.responsavel)) return false;
+    if (filters.tempo !== "Todos") {
+      const m = inadTempo(r.dataInadimplencia, hoje)?.maisDeUmMes;
+      if (filters.tempo === "mais1" ? !m : m) return false;
+    }
+    return true;
+  });
+  const ord = {
+    dataAsc:   (a, b) => (a.dataInadimplencia||"9").localeCompare(b.dataInadimplencia||"9"),
+    dataDesc:  (a, b) => (b.dataInadimplencia||"").localeCompare(a.dataInadimplencia||""),
+    nome:      (a, b) => (a.nome||"").localeCompare(b.nome||"", "pt-BR"),
+    programa:  (a, b) => (a.programa||"").localeCompare(b.programa||"", "pt-BR") || (a.nome||"").localeCompare(b.nome||"", "pt-BR"),
+    status:    (a, b) => INAD_STATUS.indexOf(a.status) - INAD_STATUS.indexOf(b.status) || (a.nome||"").localeCompare(b.nome||"", "pt-BR"),
+    pendentes: (a, b) => inadResumoParcelas(b).naoPagas - inadResumoParcelas(a).naoPagas,
+    valor:     (a, b) => (b.valorAReceber||0) - (a.valorAReceber||0),
+  }[filters.ordem] || (() => 0);
+  const lista = [...filtrados].sort((a, b) => (b.prioridade?1:0) - (a.prioridade?1:0) || ord(a, b));
+
+  const ativos = regs.filter(r => r.status === "Inadimplente");
+  const stats = [
+    ["Total",            regs.length,                                                       t.text],
+    ["Inadimplentes",    ativos.length,                                                     "#dc2626"],
+    ["Há mais de 1 mês", ativos.filter(r => inadTempo(r.dataInadimplencia, hoje)?.maisDeUmMes).length, "#d97706"],
+    ["Regularizados",    regs.filter(r => r.status === "Regularizado").length,              "#16a34a"],
+    ["Cancelados",       regs.filter(r => r.status === "Cancelado").length,                 t.textMuted],
+    ["Em aberto",        gcFmtBRL(ativos.reduce((s, r) => s + (r.valorAReceber||0), 0)) || "R$ 0,00", "#dc2626"],
+  ];
+  const selSt = { padding:"8px 12px", border:`1.5px solid ${t.inputBorder}`, borderRadius:8, fontSize:13, color:t.inputText, background:t.inputBg, cursor:"pointer", ...FF };
+  const detalhe = regs.find(r => r.id === detalheId);
+
+  if (loadError) return <LoadErrorBox />;
+  return (
+    <div>
+      <div style={{ display:"flex", gap:12, marginBottom:20, flexWrap:"wrap" }}>
+        {stats.map(([l, v, c]) => (
+          <div key={l} style={{ background:t.card, border:`1px solid ${t.border}`, borderRadius:14, padding:"12px 18px", minWidth:118 }}>
+            <div style={{ fontSize:11, color:t.textMuted, fontWeight:700, textTransform:"uppercase", letterSpacing:0.5, marginBottom:4 }}>{l}</div>
+            <div style={{ fontSize:l==="Em aberto"?20:26, fontWeight:800, color:c, lineHeight:1.1 }}>{v}</div>
+          </div>
+        ))}
+      </div>
+
+      <div style={{ background:t.card, borderRadius:14, border:`1px solid ${t.border}`, padding:"13px 18px", marginBottom:14, display:"flex", gap:10, alignItems:"center", flexWrap:"wrap", position:"sticky", top:58, zIndex:10 }}>
+        <input value={filters.search} onChange={e=>setF("search")(e.target.value)} placeholder="🔍  Buscar nome, e-mail, sistema, Nº ou série..." style={{ flex:1, minWidth:190, padding:"8px 14px", border:`1.5px solid ${t.inputBorder}`, borderRadius:9, fontSize:13, color:t.inputText, outline:"none", background:t.inputBg, ...FF }} />
+        <select value={filters.status} onChange={e=>setF("status")(e.target.value)} style={selSt}><option value="Todos">Todos os status</option>{INAD_STATUS.map(s=><option key={s}>{s}</option>)}</select>
+        <select value={filters.programa} onChange={e=>setF("programa")(e.target.value)} style={selSt}><option value="Todos">Todos os sistemas</option>{programas.map(p=><option key={p}>{p}</option>)}</select>
+        <select value={filters.responsavel} onChange={e=>setF("responsavel")(e.target.value)} style={selSt}>
+          <option value="Todos">Todos responsáveis</option><option value="nenhum">Sem responsável</option>
+          {employees.map(e=><option key={e.id} value={e.id}>{e.name}</option>)}
+        </select>
+        <select value={filters.tempo} onChange={e=>setF("tempo")(e.target.value)} style={selSt}>
+          <option value="Todos">Qualquer tempo</option><option value="mais1">Há mais de 1 mês</option><option value="ate1">Até 1 mês</option>
+        </select>
+        <select value={filters.ordem} onChange={e=>setF("ordem")(e.target.value)} style={selSt} title="Ordenar por">
+          <option value="dataAsc">↕ Inadimplência mais antiga</option><option value="dataDesc">↕ Inadimplência mais recente</option>
+          <option value="nome">↕ Nome (A–Z)</option><option value="programa">↕ Sistema</option><option value="status">↕ Status</option>
+          <option value="pendentes">↕ Mais parcelas pendentes</option><option value="valor">↕ Maior valor em aberto</option>
+        </select>
+        {perms.editar && <button onClick={()=>setForm({})} style={{ padding:"9px 18px", background:"#6366f1", border:"none", borderRadius:9, color:"#fff", fontWeight:700, fontSize:14, cursor:"pointer", whiteSpace:"nowrap", ...FF }}>+ Novo Inadimplente</button>}
+      </div>
+
+      <div style={{ background:t.card, borderRadius:14, border:`1px solid ${t.border}`, overflow:"hidden" }}>
+        {loading ? <div style={{ padding:60, textAlign:"center", color:t.textMuted }}>Carregando inadimplentes...</div>
+        : lista.length === 0 ? (
+          <div style={{ padding:60, textAlign:"center" }}>
+            <div style={{ fontSize:44, marginBottom:12 }}>{regs.length ? "😕" : "💰"}</div>
+            <div style={{ fontSize:15, fontWeight:600, color:t.text, marginBottom:4 }}>{regs.length ? "Nenhum registro encontrado" : "Nenhum inadimplente cadastrado"}</div>
+            <div style={{ fontSize:13, color:t.textMuted }}>{regs.length ? "Ajuste os filtros ou a busca." : (isAdmin ? "Importe a planilha acima ou cadastre manualmente." : "Aguarde o administrador importar a planilha.")}</div>
+          </div>
+        ) : (
+          <div style={{ padding:"10px 12px", display:"flex", flexDirection:"column", gap:5 }}>
+            {lista.map(r => (
+              <InadRow key={r.id} r={r} employees={employees} perms={perms}
+                onAbrir={()=>setDetalheId(r.id)}
+                onImportante={()=>atualizar(r.id, { prioridade: !r.prioridade })}
+                onAgenda={()=>setAgendaReg(r)}
+                onEditar={()=>setForm({ reg:r })}
+                onExcluir={()=>setConfirmId(r.id)} />
+            ))}
+          </div>
+        )}
+      </div>
+      <div style={{ marginTop:10, color:t.textMuted, fontSize:12, textAlign:"right" }}>{lista.length} de {regs.length} registros</div>
+
+      {detalhe && <InadDetalheModal reg={detalhe} employees={employees} perms={perms} user={user}
+        onClose={()=>setDetalheId(null)}
+        onStatus={st=>atualizar(detalhe.id, { status: st }, `✓  Status alterado para ${st}.`)}
+        onImportante={()=>atualizar(detalhe.id, { prioridade: !detalhe.prioridade })}
+        onAgenda={()=>setAgendaReg(detalhe)}
+        onEditar={()=>setForm({ reg:detalhe })}
+        onObservacao={registrarObs} />}
+      {form && <InadFormModal reg={form.reg} employees={employees} podeStatus={perms.status} onSave={salvarForm} onClose={()=>setForm(null)} />}
+      {agendaReg && <AgendaModal record={{ ...agendaReg, agendamento: agendaReg.agendamento || null }} nome={agendaReg.nome}
+        subtitulo={`${agendaReg.programa || "—"} · Inadimplente desde ${fmtDataBR(agendaReg.dataInadimplencia)}`}
+        onSave={salvarAgenda} onClose={()=>setAgendaReg(null)} />}
+      {confirmId && <ConfirmDialog message={`O registro de "${regs.find(r=>r.id===confirmId)?.nome}" e todo o acompanhamento (observações e compromisso) serão excluídos permanentemente.`} onConfirm={excluir} onCancel={()=>setConfirmId(null)} />}
+      {alerta && <CompromissoAlerta item={alerta} nome={alerta.nome} subtitulo={`${alerta.programa || "—"} · Inadimplente desde ${fmtDataBR(alerta.dataInadimplencia)}`}
+        onDispensar={()=>setAlerta(null)} onVer={()=>{ setAgendaReg(alerta); setAlerta(null); }} />}
+      <Toast msg={toast} />
+    </div>
+  );
+}
+
+// Importação da planilha de inadimplentes (somente Admin).
+function InadImportacao({ employees }) {
+  const { t, dark } = useTheme();
+  const [fase,     setFase]     = useState("idle"); // idle | preview | salvando | concluido | erro
+  const [arquivo,  setArquivo]  = useState("");
+  const [lidas,    setLidas]    = useState(null);
+  const [previa,   setPrevia]   = useState(null);
+  const [resultado,setResultado]= useState(null);
+  const [erro,     setErro]     = useState("");
+  const [aberto,   setAberto]   = useState(false);
+  const fileRef = useRef();
+
+  const nmEmp = (employees || []).map(e => ({ ...e, norm: satNorm(e.name) }));
+  const opcoes = agora => ({ matchEmployee: nome => satFindEmployee(nome, nmEmp), arquivoNome: arquivo, agora, novoId: () => `inad-${genId()}` });
+  const existentes = async () => (await getDocs(collection(db, "inadimplentes"))).docs.map(d => d.data());
+
+  const handleFile = file => {
+    if (!file) return;
+    setArquivo(file.name); setErro(""); setResultado(null);
+    const reader = new FileReader();
+    reader.onload = async e => {
+      try {
+        const wb = XLSX.read(e.target.result, { type:"array", cellDates:false });
+        const matriz = XLSX.utils.sheet_to_json(wb.Sheets[wb.SheetNames[0]], { header:1, defval:"" });
+        const lido = inadLerPlanilha(matriz);
+        // Prévia calculada contra o que já está salvo (leitura direta: se falhar, não importa).
+        const { resumo } = inadPlanejarImportacao(await existentes(), lido.linhas, opcoes(new Date().toISOString()));
+        setLidas(lido.linhas); setPrevia(resumo); setFase("preview");
+      } catch (err) { console.error(err); setErro("Erro ao ler o arquivo: " + err.message); setFase("erro"); }
+    };
+    reader.readAsArrayBuffer(file);
+  };
+
+  const confirmar = async () => {
+    setFase("salvando");
+    try {
+      // Recalcula na hora de gravar, com os dados mais recentes do banco.
+      const { gravar, resumo } = inadPlanejarImportacao(await existentes(), lidas, opcoes(new Date().toISOString()));
+      for (let i = 0; i < gravar.length; i += 400) {
+        const batch = writeBatch(db);
+        gravar.slice(i, i + 400).forEach(r => batch.set(doc(db, "inadimplentes", r.id), r));
+        await batch.commit();
+      }
+      setResultado(resumo); setFase("concluido");
+    } catch (err) { console.error(err); setErro("Erro ao salvar: " + err.message + " — nenhum dado foi perdido."); setFase("erro"); }
+  };
+
+  const resetar = () => { setFase("idle"); setArquivo(""); setLidas(null); setPrevia(null); setResultado(null); setErro(""); };
+  const resumoBox = (r, futuro) => (
+    <div style={{ display:"flex", gap:16, flexWrap:"wrap", marginBottom:14 }}>
+      {[[r.incluidos, futuro?"Serão incluídos":"Incluídos", "#22c55e"], [r.atualizados, futuro?"Serão atualizados":"Atualizados", "#3b82f6"], [r.ignorados, "Sem alteração", t.textMuted], [r.erros.length, "Com erro", "#ef4444"]].map(([v, l, c]) => (
+        <div key={l} style={{ textAlign:"center", minWidth:90 }}><div style={{ fontSize:22, fontWeight:800, color:c }}>{v}</div><div style={{ fontSize:11, color:t.textMuted }}>{l}</div></div>
+      ))}
+    </div>
+  );
+  const errosBox = r => r.erros.length > 0 && (
+    <div style={{ marginBottom:14, padding:"10px 14px", background:dark?"rgba(239,68,68,0.08)":"#fef2f2", border:"1px solid #fecaca", borderRadius:10, fontSize:12.5, color:dark?"#fca5a5":"#b91c1c", maxHeight:160, overflowY:"auto" }}>
+      <div style={{ fontWeight:700, marginBottom:4 }}>Linhas com erro (não serão gravadas; as demais seguem normalmente):</div>
+      {r.erros.map((e, i) => <div key={i}>Linha {e.linha}: {e.motivo}</div>)}
+    </div>
+  );
+
+  return (
+    <div style={{ marginBottom:20, background:t.card, border:`1px solid ${t.border}`, borderRadius:14, overflow:"hidden" }}>
+      <button onClick={()=>setAberto(v=>!v)} style={{ width:"100%", display:"flex", justifyContent:"space-between", alignItems:"center", padding:"14px 18px", background:"transparent", border:"none", cursor:"pointer", ...FF }}>
+        <span style={{ fontWeight:600, fontSize:14, color:t.text }}>📥 Importar planilha de inadimplentes</span>
+        <span style={{ color:t.textMuted, fontSize:12 }}>{aberto ? "▲ Fechar" : "▼ Abrir"}</span>
+      </button>
+      {aberto && (
+        <div style={{ padding:"0 18px 18px", borderTop:`1px solid ${t.border}` }}>
+          {(fase === "idle" || fase === "erro") && (<>
+            <div onClick={()=>fileRef.current?.click()}
+              onDragOver={e=>{ e.preventDefault(); e.currentTarget.style.borderColor="#6366f1"; }}
+              onDragLeave={e=>{ e.currentTarget.style.borderColor=t.border; }}
+              onDrop={e=>{ e.preventDefault(); e.currentTarget.style.borderColor=t.border; handleFile(e.dataTransfer.files[0]); }}
+              style={{ marginTop:14, border:`2px dashed ${t.border}`, borderRadius:12, padding:"30px 24px", textAlign:"center", cursor:"pointer" }}>
+              <div style={{ fontSize:34, marginBottom:8 }}>📂</div>
+              <div style={{ fontWeight:600, fontSize:14, color:t.text, marginBottom:4 }}>Clique para selecionar ou arraste o arquivo aqui</div>
+              <div style={{ fontSize:12, color:t.textMuted }}>Arquivo .xlsx no formato da planilha de inadimplentes. Importar de novo não duplica: registros existentes são atualizados e o acompanhamento é preservado.</div>
+              <input ref={fileRef} type="file" accept=".xlsx,.xls" style={{ display:"none" }} onChange={e=>{ handleFile(e.target.files?.[0]); e.target.value=""; }} />
+            </div>
+            {fase === "erro" && <div style={{ marginTop:12, padding:"10px 14px", background:"#fef2f2", border:"1px solid #fecaca", borderRadius:8, color:"#dc2626", fontSize:13 }}>{erro}</div>}
+          </>)}
+          {(fase === "preview" || fase === "salvando") && previa && (
+            <div style={{ marginTop:14 }}>
+              <div style={{ fontWeight:700, fontSize:14, color:t.text, marginBottom:2 }}>Pré-visualização</div>
+              <div style={{ fontSize:12, color:t.textMuted, marginBottom:12 }}>{arquivo} · {lidas.length} linha(s)</div>
+              {resumoBox(previa, true)}
+              {previa.statusPreservado > 0 && <div style={{ marginBottom:12, fontSize:12.5, color:t.textSub }}>ℹ️ {previa.statusPreservado} registro(s) marcados como Cancelado/Regularizado no app mantêm esse status (a planilha não sobrescreve).</div>}
+              {errosBox(previa)}
+              <div style={{ display:"flex", gap:10, justifyContent:"flex-end" }}>
+                <button onClick={resetar} disabled={fase==="salvando"} style={BTN_SEC(t)}>Cancelar</button>
+                <button onClick={confirmar} disabled={fase==="salvando" || previa.incluidos + previa.atualizados === 0} style={{ ...btnP(fase==="salvando" || previa.incluidos + previa.atualizados === 0), flex:"none" }}>{fase==="salvando" ? "Salvando..." : "Confirmar Importação"}</button>
+              </div>
+            </div>
+          )}
+          {fase === "concluido" && resultado && (
+            <div style={{ marginTop:14, textAlign:"center" }}>
+              <div style={{ fontSize:40, marginBottom:6 }}>✅</div>
+              <div style={{ fontWeight:700, fontSize:16, color:t.text, marginBottom:12 }}>Importação concluída!</div>
+              <div style={{ display:"flex", justifyContent:"center" }}>{resumoBox(resultado, false)}</div>
+              {errosBox(resultado)}
+              <button onClick={resetar} style={{ ...btnP(false), flex:"none" }}>Nova Importação</button>
+            </div>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
+// Tela dos atendentes autorizados.
+function InadimplentesScreen({ user, onBack }) {
+  const { t } = useTheme();
+  return (
+    <div style={{ minHeight:"100vh", background:t.pageBg, ...FF }}>
+      <div style={{ background:t.header, padding:"0 24px", display:"flex", alignItems:"center", justifyContent:"space-between", height:58, position:"sticky", top:0, zIndex:50, boxShadow:"0 2px 12px rgba(0,0,0,0.4)" }}>
+        <div style={{ display:"flex", alignItems:"center", gap:14 }}>
+          <button onClick={onBack} style={{ background:"rgba(255,255,255,0.08)", border:"1px solid rgba(255,255,255,0.12)", color:"#94a3b8", borderRadius:8, padding:"6px 14px", cursor:"pointer", fontSize:13, ...FF }}>← Voltar</button>
+          <span style={{ color:"#f8fafc", fontWeight:800, fontSize:16 }}>💰 Controle de Inadimplentes</span>
+        </div>
+        <div style={{ display:"flex", alignItems:"center", gap:12 }}>
+          <DarkToggle />
+          <div style={{ display:"flex", alignItems:"center", gap:8 }}>
+            <Avatar name={user.name} color={user.color||"#6366f1"} size={28} />
+            <span style={{ color:"#cbd5e1", fontWeight:500, fontSize:13 }}>{user.name}</span>
+          </div>
+        </div>
+      </div>
+      <div style={{ padding:"20px 24px 48px" }}>
+        <InadimplentesPanel user={user} isAdmin={false} />
+      </div>
+    </div>
+  );
+}
+
 // ── Home Screen ───────────────────────────────────────────────────────
 
-function HomeScreen({ user, onOpenPage, onLogout, onGestao, onPonto, onSatisfacao }) {
+function HomeScreen({ user, onOpenPage, onLogout, onGestao, onPonto, onSatisfacao, onInadimplentes }) {
   const { t } = useTheme();
   const [employees, setEmployees] = useState([]);
   const [pages,     setPages]     = useState([]);
@@ -2905,6 +3573,7 @@ function HomeScreen({ user, onOpenPage, onLogout, onGestao, onPonto, onSatisfaca
           {user.id === "admin" && (
             <button onClick={onGestao} style={{ background:"rgba(255,255,255,0.07)", border:"1px solid rgba(96,165,250,0.4)", color:"#93c5fd", borderRadius:8, padding:"6px 12px", cursor:"pointer", fontSize:12, fontWeight:600, ...FF }}>📊 Gestão</button>
           )}
+          {user.acessoInadimplentes && <button onClick={onInadimplentes} style={{ background:"rgba(255,255,255,0.07)", border:"1px solid rgba(52,211,153,0.4)", color:"#a7f3d0", borderRadius:8, padding:"6px 12px", cursor:"pointer", fontSize:12, fontWeight:600, ...FF }}>💰 Inadimplentes</button>}
           <button onClick={onSatisfacao} style={{ background:"rgba(255,255,255,0.07)", border:"1px solid rgba(251,191,36,0.4)", color:"#fde68a", borderRadius:8, padding:"6px 12px", cursor:"pointer", fontSize:12, fontWeight:600, ...FF }}>⭐ Satisfação</button>
           <button onClick={onPonto} style={{ background:"rgba(255,255,255,0.07)", border:"1px solid rgba(167,139,250,0.4)", color:"#c4b5fd", borderRadius:8, padding:"6px 12px", cursor:"pointer", fontSize:12, fontWeight:600, ...FF }}>📄 Ponto</button>
           <button onClick={onLogout} style={{ background:"rgba(255,255,255,0.07)", border:"1px solid rgba(255,255,255,0.1)", color:"#94a3b8", borderRadius:8, padding:"6px 12px", cursor:"pointer", fontSize:12, ...FF }}>Sair</button>
@@ -2954,11 +3623,10 @@ function PageDetail({ page, initEmployees, user, onBack, onLogout, onSatisfacao 
   const [confirmId,   setConfirmId]   = useState(null);
   const [satPopup,    setSatPopup]    = useState(false);
   const [agendaModal, setAgendaModal] = useState(null);
-  const [alertRecord, setAlertRecord] = useState(null);
+  const [alertRecord, setAlertRecord] = useCompromissoAlerta(records);
   const [tipoEdit,    setTipoEdit]    = useState(null);
   const [changelog,   setChangelog]   = useState(false);
   const [seen,        setSeen]        = useState(() => { try { return localStorage.getItem(CHANGELOG_KEY) === "1"; } catch { return false; } });
-  const alertedIds = useRef(new Set());
   const FKEY = `atend_filters_${page.id}`;
   const [filters, setFilters] = useState(() => {
     try {
@@ -3010,19 +3678,6 @@ function PageDetail({ page, initEmployees, user, onBack, onLogout, onSatisfacao 
     localStorage.setItem(FKEY, JSON.stringify(toSave));
   }, [filters]);
 
-  useEffect(() => {
-    const check = () => {
-      const now = new Date();
-      records.forEach(r => {
-        if (!r.agendamento || r.agendamento.concluido || alertedIds.current.has(r.id)) return;
-        const diff = (new Date(r.agendamento.dataHora) - now) / 60000;
-        if (diff >= 0 && diff <= 5) { alertedIds.current.add(r.id); setAlertRecord(r); playBeep(); }
-      });
-    };
-    check();
-    const timer = setInterval(check, 30000);
-    return () => clearInterval(timer);
-  }, [records]);
 
   const filtered = records.filter(r => {
     if (filters.search && ![r.cliente,r.descricao,r.contato,r.contato2].some(s=>String(s??"").toLowerCase().includes(filters.search.toLowerCase()))) return false;
@@ -3164,26 +3819,10 @@ function PageDetail({ page, initEmployees, user, onBack, onLogout, onSatisfacao 
       {tipoEdit    && <TipoColorPanel tipos={tipos} department={page.department} initialTipo={tipoEdit} onSave={tp=>{ saveTipoColor(tp); setTipoEdit(null); }} onClose={()=>setTipoEdit(null)} />}
       {changelog   && <ChangelogModal onClose={()=>setChangelog(false)} onDismiss={()=>setSeen(true)} />}
       {alertRecord && (
-        <Overlay z={1200}>
-          <div style={{ background:"#fff", borderRadius:20, padding:"28px 32px", maxWidth:400, width:"90%", boxShadow:"0 20px 50px rgba(0,0,0,0.3)", ...FF }}>
-            <div style={{ fontSize:38, textAlign:"center", marginBottom:10 }}>⏰</div>
-            <h3 style={{ margin:"0 0 4px", fontSize:17, fontWeight:700, color:"#1e293b", textAlign:"center" }}>Compromisso em 5 minutos!</h3>
-            <p style={{ margin:"0 0 16px", fontSize:13, color:"#64748b", textAlign:"center" }}>Verifique os detalhes abaixo</p>
-            <div style={{ background:"#fefce8", border:"1px solid #fde68a", borderRadius:10, padding:"12px 14px", marginBottom:12, fontSize:13 }}>
-              <div style={{ fontWeight:700, color:"#92400e", marginBottom:4 }}>📅 {alertRecord.agendamento.titulo}</div>
-              {alertRecord.agendamento.dataHora && <div style={{ color:"#78350f", marginBottom:4 }}>🕐 {new Date(alertRecord.agendamento.dataHora).toLocaleString("pt-BR",{day:"2-digit",month:"2-digit",hour:"2-digit",minute:"2-digit"})}</div>}
-              {alertRecord.agendamento.descricao && <div style={{ color:"#92400e" }}>📝 {alertRecord.agendamento.descricao}</div>}
-            </div>
-            <div style={{ background:"#f1f5f9", borderRadius:10, padding:"10px 14px", fontSize:13, color:"#475569", marginBottom:20 }}>
-              <div style={{ fontWeight:600, marginBottom:2 }}>{alertRecord.cliente}</div>
-              <div>Via {alertRecord.via} · {alertRecord.tipo} · {alertRecord.data}</div>
-            </div>
-            <div style={{ display:"flex", gap:8 }}>
-              <button onClick={()=>setAlertRecord(null)} style={{ flex:1, padding:"10px 0", background:"#f1f5f9", border:"none", borderRadius:10, color:"#475569", fontWeight:600, cursor:"pointer", ...FF }}>Dispensar</button>
-              <button onClick={()=>{ setAgendaModal(alertRecord); setAlertRecord(null); }} style={{ flex:2, padding:"10px 0", background:"#f59e0b", border:"none", borderRadius:8, color:"#fff", fontWeight:600, cursor:"pointer", ...FF }}>Ver compromisso</button>
-            </div>
-          </div>
-        </Overlay>
+        <CompromissoAlerta item={alertRecord} nome={alertRecord.cliente}
+          subtitulo={`Via ${alertRecord.via} · ${alertRecord.tipo} · ${alertRecord.data}`}
+          onDispensar={()=>setAlertRecord(null)}
+          onVer={()=>{ setAgendaModal(alertRecord); setAlertRecord(null); }} />
       )}
       {satPopup && (
         <Overlay z={1100}>
@@ -5878,6 +6517,7 @@ export default function App() {
   const goSatisfacao = (from = "home") => { setSatFrom(from); setView("satisfacao"); };
   const goPage       = (pg, emps) => { setOpenPage(pg); setOpenEmps(emps||[]); setView("page"); };
   const goGestao     = () => setView("gestao");
+  const goInad       = () => setView("inadimplentes");
 
   return (
     <ThemeCtx.Provider value={{ t, dark, toggle }}>
@@ -5886,8 +6526,9 @@ export default function App() {
       {view === "login"   && <LoginScreen onLogin={u=>{setUser(u);setView("home");}} onAdmin={()=>setView("admin")} />}
       {view === "page"    && openPage && <PageDetail page={openPage} initEmployees={openEmps} user={user} onBack={goHome} onLogout={logout} onSatisfacao={() => goSatisfacao("page")} />}
       {view === "gestao"  && <GestaoComercial onBack={() => setView("admin")} onLogout={logout} />}
-      {view === "home"        && user && <HomeScreen user={user} onOpenPage={goPage} onLogout={logout} onGestao={goGestao} onPonto={goPonto} onSatisfacao={() => goSatisfacao("home")} />}
+      {view === "home"        && user && <HomeScreen user={user} onOpenPage={goPage} onLogout={logout} onGestao={goGestao} onPonto={goPonto} onSatisfacao={() => goSatisfacao("home")} onInadimplentes={goInad} />}
       {view === "ponto"       && user && <PontoDigital user={user} onBack={goHome} />}
+      {view === "inadimplentes" && user?.acessoInadimplentes && <InadimplentesScreen user={user} onBack={goHome} />}
       {view === "satisfacao"  && user && <SatisfacaoView user={user} onBack={satFrom === "page" && openPage ? () => setView("page") : goHome} />}
       {isSafeMode && (
         <div style={{ position:"fixed", left:0, right:0, bottom:0, zIndex:99999, background:"repeating-linear-gradient(135deg,#f59e0b 0 14px,#d97706 14px 28px)", color:"#1c1917", textAlign:"center", padding:"6px 12px", fontSize:12.5, fontWeight:800, letterSpacing:0.3, boxShadow:"0 -2px 10px rgba(0,0,0,0.3)", pointerEvents:"none", ...FF }}>

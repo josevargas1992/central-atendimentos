@@ -11,7 +11,8 @@
     "restore": "node scripts/restore-firestore.mjs",
     "backup:drive": "node scripts/backup-firestore.mjs --out=\"G:/Meu Drive/Backups/Central de Atendimentos\" --with-code",
     "test": "firebase emulators:exec --config firebase.test.json --only firestore --project demo-central-testes \"node --test tests/*.test.mjs\"",
-    "dev:seguro": "firebase emulators:exec --only firestore --project demo-central \"node scripts/dev-seguro.mjs\""
+    "dev:seguro": "firebase emulators:exec --only firestore --project demo-central \"node scripts/dev-seguro.mjs\"",
+    "dev:seguro:rapido": "firebase emulators:exec --only firestore --project demo-central \"node scripts/dev-seguro.mjs --sem-backup\""
   },
   "dependencies": {
     "firebase": "^12.13.0",

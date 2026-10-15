@@ -13,6 +13,7 @@ export const COLLECTIONS = [
   "satisfacao", "satisfacao_config",
   "gc_vendors", "gc_collabs", "gc_months",
   "relatorios_publicos",
+  "inadimplentes",
 ];
 
 function loadEnv() {

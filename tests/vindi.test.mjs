@@ -219,11 +219,17 @@ test("webhook: sem credencial ou com senha errada → 401, nada é gravado", asy
   assert.equal(credenciaisValidas(basic("vindi", "s3nh4-forte"), "vindi", "s3nh4-forte"), true);
 });
 
-test("webhook: formato inválido → 400; método GET → 405; sem configuração → 503", async () => {
+test("webhook: verificação da Vindi (autenticada, sem evento) → 200 sem processar; JSON quebrado → 400; PUT → 405; sem configuração → 503", async () => {
   const h = handlerCom(vindiFake());
-  assert.equal((await chamar(h, { body: { foo: 1 } })).status, 400);
+  for (const r of [await chamar(h, { body: { foo: 1 } }), await chamar(h, { body: "" }), await chamar(h, { body: {}, method: "GET" })]) {
+    assert.equal(r.status, 200);
+    assert.equal(r.body.verificacao, true);
+  }
+  assert.equal((await db.collection(COL_EVENTOS).get()).size, 0, "verificação não vira evento");
+  assert.equal((await chamar(h, { body: { foo: 1 }, auth: null })).status, 401, "sem senha continua recusado");
+  assert.equal((await chamar(h, { body: {}, method: "GET", auth: basic("vindi", "errada") })).status, 401);
   assert.equal((await chamar(h, { body: "{não é json" })).status, 400);
-  assert.equal((await chamar(h, { body: {}, method: "GET" })).status, 405);
+  assert.equal((await chamar(h, { body: {}, method: "PUT" })).status, 405);
   const semCfg = criarHandlerWebhook({ getDb: () => db, lerConfig: () => ({ ...CFG, webhookConfigurado: false }), criarCliente: () => null });
   assert.equal((await chamar(semCfg, { body: payload("bill_paid", bill(1, "2026-08-10", "paid")) })).status, 503);
 });

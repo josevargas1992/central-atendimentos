@@ -27,7 +27,7 @@ const MAX_BYTES = 256 * 1024;
 export function criarHandlerWebhook({ getDb, lerConfig, criarCliente, waitUntil }) {
   return async function handler(req, res) {
     const responder = (status, corpo) => { res.status(status).setHeader("Cache-Control", "no-store"); return res.json(corpo); };
-    if (req.method !== "POST") { res.setHeader("Allow", "POST"); return responder(405, { erro: "Método não permitido." }); }
+    if (!["POST", "GET", "HEAD"].includes(req.method)) { res.setHeader("Allow", "POST"); return responder(405, { erro: "Método não permitido." }); }
 
     const cfg = lerConfig();
     // Sem configuração: 503 faz a Vindi tentar de novo depois (até ~48h), em vez de perder o evento.
@@ -37,13 +37,22 @@ export function criarHandlerWebhook({ getDb, lerConfig, criarCliente, waitUntil 
       return responder(401, { erro: "Não autorizado." });
     }
 
+    // Ao salvar o webhook, a Vindi faz uma requisição de verificação e só aceita a URL se a resposta
+    // for 2XX (developers.vindi.com.br → Webhooks: configurações). O formato dessa verificação não é
+    // documentado: requisição AUTENTICADA que não é um evento → 200, sem processar nada.
+    if (req.method !== "POST") return responder(200, { ok: true, verificacao: true });
+
     let corpo = req.body;
     if (typeof corpo === "string") {
       if (corpo.length > MAX_BYTES) return responder(413, { erro: "Notificação muito grande." });
-      try { corpo = JSON.parse(corpo); } catch { return responder(400, { erro: "JSON inválido." }); }
+      try { corpo = corpo.trim() ? JSON.parse(corpo) : {}; } catch { return responder(400, { erro: "JSON inválido." }); }
     }
     const { evento, erro } = lerEvento(corpo);
-    if (erro) return responder(400, { erro });
+    if (erro) {
+      // Autenticado, mas sem o formato de evento: trata como verificação/teste — confirma e não processa.
+      console.log("webhook: requisição autenticada sem formato de evento (verificação/teste)");
+      return responder(200, { ok: true, verificacao: true, processado: false });
+    }
 
     let db, reg;
     try {

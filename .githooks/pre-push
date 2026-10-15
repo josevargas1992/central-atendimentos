@@ -7,6 +7,12 @@ if [ "$1" != "vercel" ]; then
   echo "▶ Push para '$1' (não publica): backup não é necessário."
   exit 0
 fi
+# Antes de publicar: as funções de /api precisam carregar como na Vercel (senão o deploy derruba o servidor).
+echo "▶ Checando se as funções do servidor carregam como na Vercel..."
+if ! npm run --silent checar:funcoes; then
+  echo "✗ Alguma função não carrega — push CANCELADO (nada foi publicado)."
+  exit 1
+fi
 echo "▶ Backup do Firestore antes do push para '$1'..."
 if ! npm run --silent backup:drive; then
   echo "✗ Backup falhou — push CANCELADO. Verifique se o Google Drive (G:) está disponível."

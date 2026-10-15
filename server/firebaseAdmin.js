@@ -1,9 +1,10 @@
-// Firebase Admin SDK no servidor (funções da Vercel): Firestore e verificação de login (Auth).
+// Firebase Admin SDK no servidor (funções da Vercel): Firestore.
+// (Verificação de login fica em tokenFirebase.js — NÃO importar firebase-admin/auth aqui: no ambiente da
+//  Vercel ele quebra ao carregar e derrubaria também as funções da Vindi, como em 15/10/2026.)
 // Produção: credencial da conta de serviço em FIREBASE_SERVICE_ACCOUNT (JSON) — variável de ambiente da Vercel.
 // Testes/local: se FIRESTORE_EMULATOR_HOST estiver definido, usa o emulador (sem credencial).
 import { initializeApp, getApps, cert } from "firebase-admin/app";
 import { getFirestore } from "firebase-admin/firestore";
-import { getAuth } from "firebase-admin/auth";
 
 let db = null;
 
@@ -32,11 +33,4 @@ export function getDb() {
   // (No emulador o modo REST tenta buscar credenciais do Google e fica lento — lá fica o padrão.)
   if (!process.env.FIRESTORE_EMULATOR_HOST) db.settings({ preferRest: true });
   return db;
-}
-
-// Confere um token de login do Firebase (assinatura, validade, projeto e se não foi revogado).
-// Devolve os dados verificados do token; lança erro se for inválido.
-export async function verificarTokenFirebase(token) {
-  iniciarApp();
-  return getAuth().verifyIdToken(token, true);
 }

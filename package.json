@@ -9,7 +9,7 @@
     "preview": "vite preview",
     "backup": "node scripts/backup-firestore.mjs",
     "restore": "node scripts/restore-firestore.mjs",
-    "backup:drive": "node scripts/backup-firestore.mjs --out=\"G:/Meu Drive/Backups/Central de Atendimentos\" --with-code",
+    "backup:drive": "node scripts/backup-firestore.mjs --out=\"G:/Meu Drive/Backups/Central de Atendimentos\" --with-code --diario",
     "test": "firebase emulators:exec --config firebase.test.json --only firestore --project demo-central-testes \"node --test --test-concurrency=1 tests/*.test.mjs\"",
     "dev:seguro": "firebase emulators:exec --only firestore --project demo-central \"node scripts/dev-seguro.mjs --sem-backup\"",
     "dev:seguro:novo": "firebase emulators:exec --only firestore --project demo-central \"node scripts/dev-seguro.mjs\""

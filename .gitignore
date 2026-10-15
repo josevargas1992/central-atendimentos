@@ -14,3 +14,7 @@ backups/
 # Logs do emulador do Firebase
 firestore-debug.log
 *-debug.log
+
+# Relatórios de queda do Java (emulador do Firebase)
+hs_err_pid*.log
+replay_pid*.log

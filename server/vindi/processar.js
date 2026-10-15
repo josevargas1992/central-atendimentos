@@ -70,7 +70,14 @@ export async function sincronizarRegistro({ db, cliente, registro, origem, event
   try {
     const r = await resolverAssinatura(cliente, registro);
     if (!r) {
-      const msg = "Não foi possível localizar a assinatura ou fatura na Vindi (sem IDAssinatura/IDFatura válido ou link de fatura).";
+      // Distingue "registro sem identificadores" de "identificadores não encontrados neste ambiente da Vindi"
+      // (ex.: no sandbox não existem as assinaturas reais de produção).
+      const temIds = !!(registro.vindi?.assinaturaId || registro.idFatura || faturaDoLink(registro.vindiUrl));
+      const amb = ambiente === "producao" ? "produção" : "teste (sandbox)";
+      const msg = !temIds
+        ? "Não foi possível localizar a assinatura ou fatura na Vindi: este registro não tem IDAssinatura/IDFatura nem link da Vindi."
+        : `Não foi possível localizar a assinatura ou fatura na Vindi: os identificadores deste registro não foram encontrados no ambiente de ${amb}.` +
+          (ambiente !== "producao" ? " No sandbox só existem dados de teste — os clientes reais só serão encontrados com a chave de produção." : "");
       if (!teste) await ref.update({ "vindi.sincStatus": "erro", "vindi.sincErro": msg, "vindi.ultimaTentativa": base.em });
       await log({ resultado: "sem_identificador", erro: msg });
       return { resultado: "sem_identificador", mensagem: msg };

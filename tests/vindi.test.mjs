@@ -466,3 +466,26 @@ test("conta de serviço de outro projeto é identificada no status", async () =>
   assert.equal(p.firebaseProjetoApp, "projeto-do-app");
   assert.ok(!JSON.stringify(p).includes("SEGREDO"));
 });
+
+test("mensagem distingue registro sem IDs de IDs não encontrados no sandbox", async () => {
+  const reg = await criarInad({ idFatura: "123", vindiUrl: "https://app.vindi.com.br/customer/bills/999?token=X" });
+  const r = await sinc(reg, vindiFake({}), { ambiente: "sandbox" });
+  assert.equal(r.resultado, "sem_identificador");
+  assert.match(r.mensagem, /não foram encontrados no ambiente de teste \(sandbox\)/);
+  assert.match(r.mensagem, /chave de produção/);
+  const semIds = await criarInad({ id: "inad-2", idFatura: "", vindiUrl: "" });
+  assert.match((await sinc(semIds, vindiFake({}))).mensagem, /não tem IDAssinatura\/IDFatura nem link/);
+});
+
+test("sandbox: a mensagem do botão traz o resultado apurado, sem alterar o registro", async () => {
+  await limparTravas(); await criarInad();
+  const v = vindiFake({ assinaturas: SUB, faturas: [bill(1, "2026-08-10", "paid", "100.0", "2026-10-01"), bill(2, "2026-09-10", "pending", "50.5"), bill(3, "2026-11-10")] });
+  const r = await chamarSimples(hSinc(v, { ...CFG, ambiente: "sandbox" }), req({ inadId: "inad-1" }));
+  assert.equal(r.body.resultado, "teste");
+  assert.match(r.body.mensagem, /NÃO foi alterado/);
+  assert.match(r.body.mensagem, /1 fatura\(s\) vencida\(s\) somando R\$\s?50,50, a mais antiga de 10\/09\/2026/);
+  assert.match(r.body.mensagem, /1 em aberto ainda não vencida/);
+  assert.match(r.body.mensagem, /última paga em 01\/10\/2026/);
+  assert.match(r.body.mensagem, /status não mudaria/);
+  assert.equal((await ler()).vindi, undefined);
+});

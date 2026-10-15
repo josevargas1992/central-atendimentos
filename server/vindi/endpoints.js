@@ -41,6 +41,21 @@ async function travar(db, inadId, agora = Date.now()) {
 }
 const destravar = (db, inadId) => db.collection(COL_TRAVAS).doc(`inad-${inadId}`).set({ ate: 0 }, { merge: true });
 
+// Resumo legível da apuração — usado no modo sandbox, em que nada é gravado no registro.
+const brl = c => c == null ? "valor não informado" : (c / 100).toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
+const dataBR = iso => iso ? iso.split("-").reverse().join("/") : null;
+export function resumoTeste(v, novoStatus) {
+  if (!v) return "sem dados.";
+  const partes = [
+    `assinatura ${v.assinaturaId || v.faturaAvulsaId || "?"} (${v.assinaturaStatus || "fatura avulsa"})`,
+    `${v.vencidasQtd} fatura(s) vencida(s)${v.vencidasQtd ? ` somando ${brl(v.vencidoCentavos)}, a mais antiga de ${dataBR(v.inadimplenteDesde)} (${v.diasEmAtraso} dias)` : ""}`,
+    `${v.abertasNaoVencidas} em aberto ainda não vencida(s)`,
+    v.ultimaPaga ? `última paga em ${dataBR(v.ultimaPaga.pagoEm) || "data não informada"} (${brl(v.ultimaPaga.valorCentavos)})` : "nenhuma fatura paga",
+    novoStatus ? `em produção o status passaria para ${novoStatus}` : "em produção o status não mudaria",
+  ];
+  return partes.join("; ") + ".";
+}
+
 export function criarHandlerSincronizar({ getDb, lerConfig, criarCliente }) {
   return async function handler(req, res) {
     if (req.method !== "POST") { res.setHeader("Allow", "POST"); return responder(res, 405, { erro: "Método não permitido." }); }
@@ -58,7 +73,7 @@ export function criarHandlerSincronizar({ getDb, lerConfig, criarCliente }) {
       const r = await sincronizarRegistro({ db, cliente: criarCliente(cfg), registro: { id: snap.id, ...snap.data() }, origem: "manual", ambiente: cfg.ambiente });
       const mensagens = {
         ok: r.novoStatus ? `Atualizado pela Vindi. Status alterado para ${r.novoStatus}.` : "Atualizado pela Vindi.",
-        teste: "Consulta feita no ambiente de TESTE (sandbox): o registro não é alterado — veja o histórico no Admin.",
+        teste: `Consulta de TESTE (sandbox) — o registro NÃO foi alterado. Resultado apurado: ${resumoTeste(r.vindi, r.novoStatus)}`,
         sem_identificador: r.mensagem,
         ignorado_antigo: "A Vindi devolveu dados mais antigos do que os já registrados; nada foi alterado.",
         erro: `Não foi possível atualizar: ${r.mensagem} Os dados anteriores foram mantidos.`,

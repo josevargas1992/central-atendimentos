@@ -10,12 +10,14 @@
     "backup": "node scripts/backup-firestore.mjs",
     "restore": "node scripts/restore-firestore.mjs",
     "backup:drive": "node scripts/backup-firestore.mjs --out=\"G:/Meu Drive/Backups/Central de Atendimentos\" --with-code",
-    "test": "firebase emulators:exec --config firebase.test.json --only firestore --project demo-central-testes \"node --test tests/*.test.mjs\"",
+    "test": "firebase emulators:exec --config firebase.test.json --only firestore --project demo-central-testes \"node --test --test-concurrency=1 tests/*.test.mjs\"",
     "dev:seguro": "firebase emulators:exec --only firestore --project demo-central \"node scripts/dev-seguro.mjs\"",
     "dev:seguro:rapido": "firebase emulators:exec --only firestore --project demo-central \"node scripts/dev-seguro.mjs --sem-backup\""
   },
   "dependencies": {
+    "@vercel/functions": "3.9.9",
     "firebase": "^12.13.0",
+    "firebase-admin": "14.5.0",
     "pdf-lib": "^1.17.1",
     "pdfjs-dist": "^3.11.174",
     "react": "^18.3.1",

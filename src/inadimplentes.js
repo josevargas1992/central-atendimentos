@@ -258,7 +258,7 @@ export function inadPlanejarImportacao(existentes, lidas, { matchEmployee = () =
       gravar.push({
         id: r.numero ? `inad-${r.numero}` : novoId(),
         ...daPlanilha,
-        status: r.statusPlanilha || "Inadimplente",
+        status: r.statusPlanilha || "Inadimplente", statusOrigem: "planilha",
         responsavelId: matchEmployee(r.colaboradorPlanilha) || null,
         prioridade: false, agendamento: null, observacoes: [],
         origem: "importacao", criadoEm: agora, importadoEm: agora, arquivoNome,
@@ -278,7 +278,8 @@ export function inadPlanejarImportacao(existentes, lidas, { matchEmployee = () =
     if (!mudou) { resumo.ignorados++; continue; }
 
     // Mantém tudo que é do app (observações, compromisso, importante...) e troca só o que vem da planilha.
-    gravar.push({ ...atual, ...daPlanilha, status, responsavelId, importadoEm: agora, arquivoNome });
+    const statusOrigem = status !== atual.status ? "planilha" : atual.statusOrigem;
+    gravar.push({ ...atual, ...daPlanilha, status, ...(statusOrigem ? { statusOrigem } : {}), responsavelId, importadoEm: agora, arquivoNome });
     resumo.atualizados++;
   }
   return { gravar, resumo };

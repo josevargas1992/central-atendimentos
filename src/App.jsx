@@ -489,6 +489,7 @@ const CHANGELOG = [
       { type: "novo",     text: "Inadimplentes: botão \"Consultar na Vindi\" abre a cobrança do cliente em uma nova aba." },
       { type: "novo",     text: "Inadimplentes: pesquisa, filtros (status, sistema, responsável, há mais de 1 mês) e ordenação." },
       { type: "melhoria", text: "O acesso aos Inadimplentes é liberado individualmente pelo administrador no cadastro de cada atendente." },
+      { type: "novo",     text: "Inadimplentes: integração com a Vindi — botão \"Atualizar pela Vindi\" mostra faturas vencidas, valor vencido, última fatura paga e o histórico de faturas. Pagamentos confirmados pela Vindi atualizam o registro automaticamente." },
     ],
   },
   {
@@ -2226,7 +2227,7 @@ function AdminPanel({ onBack, onGestao }) {
               </div>
             )
           ) : tab === "inadimplentes" ? (
-            <><InadImportacao employees={employees} /><InadimplentesPanel user={null} isAdmin employees={employees} /></>
+            <><VindiAdminCard /><InadImportacao employees={employees} /><InadimplentesPanel user={null} isAdmin employees={employees} /></>
           ) : tab === "satisfacao" ? (
             <SatisfacaoAdminTab employees={employees} />
           ) : (
@@ -2931,12 +2932,11 @@ function InadStatusBadge({ status }) {
   return <span style={{ display:"inline-flex", alignItems:"center", gap:5, background:dark?c.darkBg:c.bg, color:dark?c.darkText:c.text, border:`1px solid ${dark?c.darkBorder:"transparent"}`, padding:"3px 10px 3px 7px", borderRadius:20, fontSize:11.5, fontWeight:600, whiteSpace:"nowrap" }}><span style={{ width:6, height:6, borderRadius:"50%", background:c.bar }} />{status}</span>;
 }
 
-// Parcelas como "bolinhas": verde = paga, cinza = não paga.
+// Parcelas como "quadradinhos": verde = paga, laranja = não paga.
 function InadParcelasMini({ reg, size=7 }) {
-  const { dark } = useTheme();
   return (
     <div style={{ display:"flex", gap:2, flexWrap:"wrap" }}>
-      {(reg.parcelas||[]).map(p => <span key={p.n} title={`Parcela ${p.n}: ${p.paga?"paga":"não paga"}`} style={{ width:size, height:size, borderRadius:2, background:p.paga?"#22c55e":(dark?"#334155":"#e2e8f0") }} />)}
+      {(reg.parcelas||[]).map(p => <span key={p.n} title={`Parcela ${p.n}: ${p.paga?"paga":"não paga"}`} style={{ width:size, height:size, borderRadius:2, background:p.paga?"#22c55e":"#f97316" }} />)}
     </div>
   );
 }
@@ -3094,6 +3094,169 @@ function InadFormModal({ reg, employees, podeStatus, onSave, onClose }) {
   );
 }
 
+// ── Integração Vindi (dados apurados pelo servidor; a chave nunca chega ao navegador) ──
+
+const fmtCentavos = c => c == null ? "—" : (c / 100).toLocaleString("pt-BR", { style:"currency", currency:"BRL" });
+const fmtDataHora = iso => iso ? new Date(iso).toLocaleString("pt-BR", { day:"2-digit", month:"2-digit", year:"numeric", hour:"2-digit", minute:"2-digit" }) : "—";
+const VINDI_FATURA_STATUS = { paid:["Paga","#15803d","#dcfce7"], pending:["Pendente","#b45309","#fef3c7"], canceled:["Cancelada","#475569","#f1f5f9"], review:["Em análise","#1d4ed8","#dbeafe"], scheduled:["Agendada","#1d4ed8","#dbeafe"] };
+
+async function chamarApiVindi(caminho, corpo) {
+  let res;
+  try {
+    res = await fetch(`/api/vindi/${caminho}`, corpo === undefined ? {} : { method:"POST", headers:{ "Content-Type":"application/json" }, body: JSON.stringify(corpo) });
+  } catch { return { ok:false, dados:{ erro:"Sem conexão com o servidor." } }; }
+  // No "npm run dev" local não existem as funções /api: o Vite devolve a própria página (HTML) ou 404.
+  if (!(res.headers.get("content-type") || "").includes("application/json"))
+    return { ok:false, dados:{ erro: "A integração Vindi só funciona no site publicado (ou com 'vercel dev'). No localhost comum ela não está disponível." } };
+  let dados = {};
+  try { dados = await res.json(); } catch { return { ok:false, dados:{ erro: `Resposta inesperada do servidor (HTTP ${res.status}).` } }; }
+  return { ok: res.ok, status: res.status, dados };
+}
+
+function InadVindiSecao({ reg, box, titulo }) {
+  const { t, dark } = useTheme();
+  const [carregando, setCarregando] = useState(false);
+  const [msg, setMsg] = useState(null); // { ok, texto }
+  const v = reg.vindi;
+  const atualizar = async () => {
+    if (carregando) return;               // evita cliques repetidos
+    setCarregando(true); setMsg(null);
+    const r = await chamarApiVindi("sincronizar", { inadId: reg.id });
+    setMsg({ ok: r.ok, texto: r.dados.mensagem || r.dados.erro || "Concluído." });
+    setCarregando(false);
+  };
+  const ind = !v ? null : v.sincStatus === "ok" ? ["✓ Sincronizado", "#16a34a"] : v.sincStatus === "incompleto" ? ["⚠ Dados incompletos", "#d97706"] : ["✗ Erro na última tentativa", "#dc2626"];
+  const linha = (rotulo, valor, cor) => (
+    <div style={{ display:"flex", justifyContent:"space-between", gap:12, padding:"5px 0", borderBottom:`1px solid ${t.border}`, fontSize:13 }}>
+      <span style={{ color:t.textMuted }}>{rotulo}</span><span style={{ color:cor || t.text, fontWeight:600, textAlign:"right" }}>{valor ?? "—"}</span>
+    </div>
+  );
+  return (
+    <div style={{ ...box, marginBottom:14 }}>
+      <div style={{ display:"flex", justifyContent:"space-between", alignItems:"flex-start", gap:10, flexWrap:"wrap", marginBottom:6 }}>
+        <div>
+          {titulo("Situação na Vindi")}
+          <div style={{ fontSize:12, color:t.textMuted, marginTop:-6 }}>
+            {v ? <>Última sincronização: <b style={{ color:t.textSub }}>{fmtDataHora(v.ultimaSincronizacao)}</b>{ind && <span style={{ marginLeft:8, color:ind[1], fontWeight:700 }}>{ind[0]}</span>}</> : "Ainda não sincronizado com a Vindi."}
+          </div>
+        </div>
+        <button onClick={atualizar} disabled={carregando} style={{ ...BTN_SEC(t), padding:"7px 14px", fontSize:13, opacity:carregando?0.6:1, cursor:carregando?"wait":"pointer" }}>
+          {carregando ? "Consultando a Vindi…" : "🔄 Atualizar pela Vindi"}
+        </button>
+      </div>
+      {msg && <div style={{ margin:"8px 0", padding:"8px 12px", borderRadius:8, fontSize:12.5, background:msg.ok?(dark?"rgba(34,197,94,0.1)":"#f0fdf4"):(dark?"rgba(239,68,68,0.1)":"#fef2f2"), color:msg.ok?(dark?"#86efac":"#166534"):(dark?"#fca5a5":"#b91c1c"), border:`1px solid ${msg.ok?"#86efac":"#fecaca"}` }}>{msg.texto}</div>}
+      {v?.sincStatus === "erro" && v.sincErro && <div style={{ margin:"6px 0", fontSize:12, color:dark?"#fca5a5":"#b91c1c" }}>Última tentativa ({fmtDataHora(v.ultimaTentativa)}): {v.sincErro} Os dados abaixo são da última sincronização bem-sucedida.</div>}
+      {v?.divergencia && <div style={{ margin:"6px 0", padding:"8px 12px", borderRadius:8, fontSize:12.5, background:dark?"rgba(245,158,11,0.1)":"#fffbeb", border:"1px solid #fde68a", color:dark?"#fbbf24":"#92400e" }}>⚠️ {v.divergencia}</div>}
+      {v && v.ultimaSincronizacao && (<>
+        <div style={{ display:"grid", gridTemplateColumns:"repeat(auto-fit, minmax(260px, 1fr))", gap:"0 24px", marginTop:6 }}>
+          <div>
+            {linha("Faturas vencidas", v.vencidasQtd, v.vencidasQtd ? "#dc2626" : "#16a34a")}
+            {linha("Valor total vencido", fmtCentavos(v.vencidoCentavos), v.vencidasQtd ? "#dc2626" : undefined)}
+            {linha("Inadimplente desde (Vindi)", v.inadimplenteDesde ? fmtDataBR(v.inadimplenteDesde) : "—")}
+            {linha("Dias desde o vencimento mais antigo", v.diasEmAtraso ?? "—")}
+          </div>
+          <div>
+            {linha("Vencida mais recente", v.vencidaMaisRecente ? `${fmtDataBR(v.vencidaMaisRecente.vencimento)} · ${fmtCentavos(v.vencidaMaisRecente.valorCentavos)}` : "—")}
+            {linha("Última fatura paga", v.ultimaPaga ? `${v.ultimaPaga.pagoEm ? fmtDataBR(v.ultimaPaga.pagoEm) : "data não informada"} · ${fmtCentavos(v.ultimaPaga.valorCentavos)}` : "—")}
+            {linha("Em aberto, ainda não vencidas", v.abertasNaoVencidas ?? "—")}
+            {linha("Assinatura", v.assinaturaStatus === "canceled" ? "Cancelada (dívida vencida continua valendo)" : v.assinaturaStatus === "active" ? "Ativa" : (v.assinaturaStatus || (v.faturaAvulsaId ? "Fatura avulsa" : "—")), v.assinaturaStatus === "canceled" ? "#b45309" : undefined)}
+          </div>
+        </div>
+        {(v.faturas || []).length > 0 && (
+          <details style={{ marginTop:10 }}>
+            <summary style={{ cursor:"pointer", fontSize:12.5, color:t.textSub, fontWeight:600 }}>Histórico de faturas na Vindi ({v.faturas.length})</summary>
+            <div style={{ overflowX:"auto", marginTop:8 }}>
+              <table style={{ width:"100%", borderCollapse:"collapse", fontSize:12.5, minWidth:420 }}>
+                <thead><tr>{["Vencimento","Valor","Situação","Pago em"].map(h => <th key={h} style={{ textAlign:"left", padding:"6px 8px", color:t.textMuted, fontWeight:600, borderBottom:`1px solid ${t.border}` }}>{h}</th>)}</tr></thead>
+                <tbody>
+                  {v.faturas.map(f => { const [rot, cor, bg] = f.vencida ? ["Vencida", "#b91c1c", "#fee2e2"] : (VINDI_FATURA_STATUS[f.status] || [f.status || "—", t.textSub, t.btnSecBg]); return (
+                    <tr key={f.id}>
+                      <td style={{ padding:"6px 8px", borderBottom:`1px solid ${t.border}`, color:t.text }}>{f.vencimento ? fmtDataBR(f.vencimento) : "—"}</td>
+                      <td style={{ padding:"6px 8px", borderBottom:`1px solid ${t.border}`, color:t.text }}>{fmtCentavos(f.valorCentavos)}</td>
+                      <td style={{ padding:"6px 8px", borderBottom:`1px solid ${t.border}` }}><span style={{ padding:"2px 8px", borderRadius:20, fontSize:11, fontWeight:700, color:dark?"#e2e8f0":cor, background:dark?"rgba(255,255,255,0.08)":bg }}>{rot}</span></td>
+                      <td style={{ padding:"6px 8px", borderBottom:`1px solid ${t.border}`, color:t.textMuted }}>{f.pagoEm ? fmtDataBR(f.pagoEm) : "—"}</td>
+                    </tr>); })}
+                </tbody>
+              </table>
+            </div>
+          </details>
+        )}
+      </>)}
+    </div>
+  );
+}
+
+// Card do Admin: situação da integração, teste de conexão, reprocessamento e últimos erros.
+function VindiAdminCard() {
+  const { t, dark } = useTheme();
+  const [aberto, setAberto] = useState(false);
+  const [info, setInfo] = useState(null);
+  const [acao, setAcao] = useState(null);
+  const [msg, setMsg] = useState(null);
+  const [erros, setErros] = useState([]);
+  const [pendentes, setPendentes] = useState(0);
+
+  useEffect(() => {
+    if (!aberto) return;
+    chamarApiVindi("status").then(r => setInfo(r.ok ? r.dados : { indisponivel: r.dados.erro }));
+    const u1 = onSnapshot(query(collection(db, "vindi_sincronizacoes"), where("resultado", "in", ["erro", "nao_vinculado", "sem_identificador"])),
+      s => setErros(s.docs.map(d => d.data()).sort((a, b) => (b.em||"").localeCompare(a.em||"")).slice(0, 10)), () => setErros([]));
+    const u2 = onSnapshot(query(collection(db, "vindi_eventos"), where("status", "in", ["pendente", "erro"])), s => setPendentes(s.size), () => {});
+    return () => { u1(); u2(); };
+  }, [aberto]);
+
+  const executar = async nome => {
+    if (acao) return;
+    setAcao(nome); setMsg(null);
+    const r = await chamarApiVindi("status", { acao: nome });
+    setMsg({ ok: r.ok && r.dados.conexao !== "erro", texto: r.dados.mensagem || r.dados.erro || "Concluído." });
+    if (r.dados.ambiente !== undefined) setInfo(r.dados);
+    setAcao(null);
+  };
+  const ambiente = info?.ambiente === "producao" ? ["PRODUÇÃO", "#dc2626"] : info?.ambiente === "sandbox" ? ["TESTE (sandbox)", "#2563eb"] : null;
+  const item = (rotulo, valor) => <div style={{ display:"flex", justifyContent:"space-between", gap:12, padding:"6px 0", borderBottom:`1px solid ${t.border}`, fontSize:13 }}><span style={{ color:t.textMuted }}>{rotulo}</span><span style={{ color:t.text, fontWeight:600, textAlign:"right" }}>{valor}</span></div>;
+
+  return (
+    <div style={{ marginBottom:20, background:t.card, border:`1px solid ${t.border}`, borderRadius:14, overflow:"hidden" }}>
+      <button onClick={()=>setAberto(v=>!v)} style={{ width:"100%", display:"flex", justifyContent:"space-between", alignItems:"center", padding:"14px 18px", background:"transparent", border:"none", cursor:"pointer", ...FF }}>
+        <span style={{ fontWeight:600, fontSize:14, color:t.text }}>🔗 Integração Vindi</span>
+        <span style={{ color:t.textMuted, fontSize:12 }}>{aberto ? "▲ Fechar" : "▼ Abrir"}</span>
+      </button>
+      {aberto && (
+        <div style={{ padding:"4px 18px 18px", borderTop:`1px solid ${t.border}` }}>
+          {!info ? <div style={{ padding:16, color:t.textMuted, fontSize:13 }}>Carregando…</div>
+          : info.indisponivel ? <div style={{ marginTop:12, fontSize:13, color:t.textMuted }}>{info.indisponivel}</div>
+          : (<>
+            <div style={{ marginTop:8 }}>
+              {item("Ambiente", ambiente ? <span style={{ color:ambiente[1] }}>{ambiente[0]}</span> : "não definido")}
+              {item("Chave da API", info.apiConfigurada ? `configurada (${info.chaveFinal})` : "não configurada")}
+              {item("Webhook", info.webhookConfigurado ? "usuário e senha configurados" : "não configurado")}
+              {item("Eventos pendentes ou com erro", pendentes)}
+            </div>
+            <div style={{ marginTop:12, fontSize:12.5, color:t.textSub }}>
+              URL para cadastrar na Vindi (Configurações → Webhooks), trocando USUARIO e SENHA pelos valores definidos na Vercel:
+              <div style={{ marginTop:6, padding:"8px 10px", borderRadius:8, background:dark?"#0f172a":"#f1f5f9", fontFamily:"monospace", fontSize:12, wordBreak:"break-all", color:t.text }}>{info.webhookUrl || "—"}</div>
+              <div style={{ marginTop:6, color:t.textMuted }}>Eventos: bill_paid, bill_canceled, bill_overdue, charge_rejected, subscription_canceled.</div>
+            </div>
+            {info.ambiente === "sandbox" && <div style={{ marginTop:10, fontSize:12.5, color:dark?"#93c5fd":"#1d4ed8" }}>ℹ️ Em modo TESTE, as consultas e webhooks ficam só no histórico — nenhum inadimplente é alterado.</div>}
+            <div style={{ display:"flex", gap:8, marginTop:14, flexWrap:"wrap" }}>
+              <button onClick={()=>executar("testar")} disabled={!!acao || !info.apiConfigurada} style={{ ...BTN_SEC(t), padding:"8px 16px", fontSize:13, opacity:(!!acao||!info.apiConfigurada)?0.5:1 }}>{acao === "testar" ? "Testando…" : "Testar conexão"}</button>
+              <button onClick={()=>executar("reprocessar")} disabled={!!acao || !info.apiConfigurada || !pendentes} style={{ ...BTN_SEC(t), padding:"8px 16px", fontSize:13, opacity:(!!acao||!info.apiConfigurada||!pendentes)?0.5:1 }}>{acao === "reprocessar" ? "Reprocessando…" : "Reprocessar eventos pendentes"}</button>
+            </div>
+            {msg && <div style={{ marginTop:10, padding:"8px 12px", borderRadius:8, fontSize:12.5, background:msg.ok?(dark?"rgba(34,197,94,0.1)":"#f0fdf4"):(dark?"rgba(239,68,68,0.1)":"#fef2f2"), color:msg.ok?(dark?"#86efac":"#166534"):(dark?"#fca5a5":"#b91c1c") }}>{msg.texto}</div>}
+          </>)}
+          <div style={{ marginTop:16, fontSize:11, fontWeight:700, color:t.textMuted, textTransform:"uppercase", letterSpacing:0.5 }}>Últimos problemas de sincronização</div>
+          {erros.length === 0 ? <div style={{ fontSize:12.5, color:t.textMuted, marginTop:6 }}>Nenhum.</div> : erros.map((e, i) => (
+            <div key={i} style={{ fontSize:12.5, padding:"6px 0", borderBottom:`1px solid ${t.border}`, color:t.textSub }}>
+              <b>{fmtDataHora(e.em)}</b> · {e.origem === "webhook" ? `webhook ${e.evento || ""}` : "manual"}{e.ambiente === "sandbox" ? " · teste" : ""} · {e.erro || e.resultado}
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
 // Detalhes completos + acompanhamento (observações, compromisso, importante, status).
 function InadDetalheModal({ reg, employees, perms, user, onClose, onStatus, onImportante, onAgenda, onEditar, onObservacao }) {
   const { t, dark } = useTheme();
@@ -3158,6 +3321,8 @@ function InadDetalheModal({ reg, employees, perms, user, onClose, onStatus, onIm
           {reg.pagamento && linha("Forma de pagamento", reg.pagamento)}
         </div>
       </div>
+
+      <InadVindiSecao reg={reg} box={box} titulo={titulo} />
 
       <div style={{ ...box, marginBottom:14 }}>
         {titulo("Parcelas")}
@@ -3241,10 +3406,11 @@ function InadimplentesPanel({ user, isAdmin, employees: empsProp }) {
     const conflito = dados.numero && regs.find(r => r.numero === dados.numero && r.id !== editando?.id);
     if (conflito) { showToast(`⚠️  Já existe um registro com o Nº ${dados.numero} (${conflito.nome}).`); return; }
     if (editando) {
-      if (!perms.status) delete dados.status;
+      if (!perms.status || dados.status === editando.status) delete dados.status;
+      else dados.statusOrigem = "manual"; // definido por uma pessoa: a Vindi não troca automaticamente
       if (await atualizar(editando.id, dados, "✓  Registro atualizado.")) setForm(null);
     } else {
-      const novo = { id:`inad-m-${genId()}`, ...dados, status: perms.status ? dados.status : "Inadimplente",
+      const novo = { id:`inad-m-${genId()}`, ...dados, status: perms.status ? dados.status : "Inadimplente", statusOrigem: perms.status && dados.status !== "Inadimplente" ? "manual" : "cadastro",
         prioridade:false, agendamento:null, observacoes:[], origem:"manual", criadoEm:new Date().toISOString(), criadoPor:user?.name || "Administrador" };
       try { await saveItem("inadimplentes", novo); showToast("✓  Inadimplente cadastrado."); setForm(null); }
       catch (e) { console.error(e); showToast("❌  Erro ao salvar — verifique a conexão."); }
@@ -3354,7 +3520,7 @@ function InadimplentesPanel({ user, isAdmin, employees: empsProp }) {
 
       {detalhe && <InadDetalheModal reg={detalhe} employees={employees} perms={perms} user={user}
         onClose={()=>setDetalheId(null)}
-        onStatus={st=>atualizar(detalhe.id, { status: st }, `✓  Status alterado para ${st}.`)}
+        onStatus={st=>atualizar(detalhe.id, { status: st, statusOrigem: "manual" }, `✓  Status alterado para ${st}.`)}
         onImportante={()=>atualizar(detalhe.id, { prioridade: !detalhe.prioridade })}
         onAgenda={()=>setAgendaReg(detalhe)}
         onEditar={()=>setForm({ reg:detalhe })}

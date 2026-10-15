@@ -4,7 +4,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import {
   inadLerPlanilha, inadMapearParcelas, inadResumoParcelas, inadTempo, inadTempoTexto,
-  inadPlanejarImportacao, inadVindiValido, inadStatusPlanilha,
+  inadPlanejarImportacao, inadVindiValido, inadStatusPlanilha, inadSituacaoParcelas,
 } from "../src/inadimplentes.js";
 
 const S = (d, m, y) => (Date.UTC(y, m - 1, d) - Date.UTC(1899, 11, 30)) / 86400000; // data → número de série do Excel
@@ -177,4 +177,38 @@ test("linha repetida no mesmo arquivo é apontada como erro", () => {
   const { resumo } = plano([], [linha({ n: 90, nome: "A" }), linha({ n: 90, nome: "A" })]);
   assert.equal(resumo.incluidos, 1);
   assert.equal(resumo.erros.length, 1);
+});
+
+// ── Cores dos quadradinhos (situação de cada parcela) ─────────────────
+
+const fat = (venc, status, pagoEm = null) => ({ id: venc, status, vencimento: venc, pagoEm });
+const sit = (reg, hoje = "2026-10-15") => inadSituacaoParcelas(reg, hoje).map(p => p.situacao);
+
+test("com Vindi: pagas verde, vencidas laranja, a vencer e não geradas cinza — por parcela", () => {
+  const reg = { numParcelas: 6, parcelas: [], vindi: { faturas: [
+    fat("2026-09-10", "pending"), fat("2026-07-10", "paid", "2026-07-11"), fat("2026-08-10", "paid", "2026-08-12"), fat("2026-10-20", "pending"),
+  ] } };
+  // ordem por vencimento: jul (paga), ago (paga), set (vencida), out/20 (a vencer), 5 e 6 não geradas
+  assert.deepEqual(sit(reg), ["paga", "paga", "vencida", "aVencer", "naoGerada", "naoGerada"]);
+});
+
+test("vence hoje não é atraso; vencida ontem é", () => {
+  const reg = { numParcelas: 2, vindi: { faturas: [fat("2026-10-14", "pending"), fat("2026-10-15", "pending")] } };
+  assert.deepEqual(sit(reg), ["vencida", "aVencer"]);
+});
+
+test("a Vindi tem prioridade sobre a planilha (pagamento feito depois da planilha)", () => {
+  const reg = { numParcelas: 3, parcelas: [{ n: 1, paga: true }, { n: 2, paga: false }, { n: 3, paga: false }],
+    vindi: { faturas: [fat("2026-08-10", "paid"), fat("2026-09-10", "paid"), fat("2026-10-10", "pending")] } };
+  assert.deepEqual(sit(reg), ["paga", "paga", "vencida"]);
+});
+
+test("faturas canceladas não ocupam lugar de parcela", () => {
+  const reg = { numParcelas: 3, vindi: { faturas: [fat("2026-08-10", "paid"), fat("2026-08-20", "canceled"), fat("2026-09-10", "pending")] } };
+  assert.deepEqual(sit(reg), ["paga", "vencida", "naoGerada"]);
+});
+
+test("sem dados da Vindi: paga pela planilha; não paga fica 'naoPaga' (não presume atraso)", () => {
+  const reg = { numParcelas: 3, parcelas: [{ n: 1, paga: true }, { n: 2, paga: false }, { n: 3, paga: false }] };
+  assert.deepEqual(sit(reg), ["paga", "naoPaga", "naoPaga"]);
 });

@@ -185,6 +185,33 @@ export function inadResumoParcelas(reg) {
   };
 }
 
+// Situação de cada parcela para exibição (quadradinhos da lista):
+//   "paga"      → paga
+//   "vencida"   → fatura gerada, não paga e com vencimento já passado (atrasada)
+//   "aVencer"   → fatura gerada, não paga, vencimento hoje ou no futuro (ainda não atrasada)
+//   "naoGerada" → a Vindi ainda não gerou a fatura desta parcela
+//   "naoPaga"   → sem dados da Vindi: só se sabe que não foi paga (não dá para dizer se venceu)
+// Com dados da Vindi, cada fatura da assinatura corresponde a uma parcela, na ordem de vencimento
+// (conferido em 15/10/2026 nos 84 contratos: nunca há mais faturas que parcelas). A Vindi tem
+// prioridade sobre a planilha. hoje = "AAAA-MM-DD".
+export function inadSituacaoParcelas(reg, hoje) {
+  const total = reg.numParcelas ?? (reg.parcelas || []).length;
+  const faturas = (reg.vindi?.faturas || []).filter(f => f.status !== "canceled")
+    .sort((a, b) => (a.vencimento || "9999").localeCompare(b.vencimento || "9999"));
+  const planilha = Object.fromEntries((reg.parcelas || []).map(p => [p.n, p]));
+  return Array.from({ length: total }, (_, i) => {
+    const n = i + 1;
+    if (faturas.length) {
+      const f = faturas[i];
+      if (!f) return { n, situacao: "naoGerada" };
+      if (f.status === "paid") return { n, situacao: "paga", pagoEm: f.pagoEm || null, vencimento: f.vencimento || null };
+      if (f.status === "pending" && f.vencimento && f.vencimento < hoje) return { n, situacao: "vencida", vencimento: f.vencimento };
+      return { n, situacao: "aVencer", vencimento: f.vencimento || null };
+    }
+    return planilha[n]?.paga ? { n, situacao: "paga", pagoEm: planilha[n].dataPagamento || null } : { n, situacao: "naoPaga" };
+  });
+}
+
 // Dias e meses completos desde a data de inadimplência ("AAAA-MM-DD"), sem fuso.
 export function inadTempo(dataISO, hoje = new Date()) {
   if (!dataISO) return null;

@@ -4,7 +4,7 @@ import { db, isSafeMode } from "./firebase";
 import * as store from "./data";
 import { consultarLogike, descreverTesteLogike } from "./logike";
 import { satNorm, satParseData, satAgruparPorMes, satDistribuir } from "./satisfacao";
-import { INAD_STATUS, inadLerPlanilha, inadResumoParcelas, inadTempo, inadTempoTexto, inadPlanejarImportacao, inadVindiValido } from "./inadimplentes";
+import { INAD_STATUS, inadLerPlanilha, inadResumoParcelas, inadSituacaoParcelas, inadTempo, inadTempoTexto, inadPlanejarImportacao, inadVindiValido } from "./inadimplentes";
 import * as XLSX from "xlsx";
 
 // ── Constants ─────────────────────────────────────────────────────────
@@ -476,10 +476,18 @@ function RecordRow({ r, employees, tiposMap, togglePrio, togglePesquisa, updateS
 
 // ──────────────────────────────────────────────────────────────────────
 
-const CHANGELOG_VERSION = "1.6.0";
+const CHANGELOG_VERSION = "1.6.1";
 const CHANGELOG_KEY = `changelog_seen_${CHANGELOG_VERSION}`;
 
 const CHANGELOG = [
+  {
+    version: "1.6.1",
+    date: "Out 2026",
+    entries: [
+      { type: "melhoria", text: "Inadimplentes: os quadradinhos das parcelas mostram a situação real — verde = paga, laranja = atrasada, cinza = ainda não gerada. Passe o mouse para ver datas." },
+      { type: "melhoria", text: "Inadimplentes: a lista ficou mais limpa — o responsável não aparece mais abaixo do valor (continua nos detalhes do cliente)." },
+    ],
+  },
   {
     version: "1.6.0",
     date: "Out 2026",
@@ -2926,11 +2934,20 @@ function InadStatusBadge({ status }) {
   return <span style={{ display:"inline-flex", alignItems:"center", gap:5, background:dark?c.darkBg:c.bg, color:dark?c.darkText:c.text, border:`1px solid ${dark?c.darkBorder:"transparent"}`, padding:"3px 10px 3px 7px", borderRadius:20, fontSize:11.5, fontWeight:600, whiteSpace:"nowrap" }}><span style={{ width:6, height:6, borderRadius:"50%", background:c.bar }} />{status}</span>;
 }
 
-// Parcelas como "quadradinhos": verde = paga, laranja = não paga.
+// Parcelas como "quadradinhos": verde = paga, laranja = atrasada (vencida e não paga),
+// cinza = ainda não gerada (ou gerada mas ainda não vencida). Ver inadSituacaoParcelas.
+const SITUACAO_PARCELA = {
+  paga:      { cor:"#22c55e", rotulo: p => `paga${p.pagoEm ? " em " + fmtDataBR(p.pagoEm) : ""}` },
+  vencida:   { cor:"#f97316", rotulo: p => `atrasada (venceu em ${fmtDataBR(p.vencimento)})` },
+  aVencer:   { cor:"#cbd5e1", rotulo: p => `gerada, ${p.vencimento ? "vence em " + fmtDataBR(p.vencimento) : "ainda não vencida"}` },
+  naoGerada: { cor:"#cbd5e1", rotulo: () => "ainda não gerada" },
+  naoPaga:   { cor:"#cbd5e1", rotulo: () => "não paga — sincronize com a Vindi para saber se está atrasada" },
+};
+const hojeLocal = () => { const d = new Date(); return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,"0")}-${String(d.getDate()).padStart(2,"0")}`; };
 function InadParcelasMini({ reg, size=7 }) {
   return (
     <div style={{ display:"flex", gap:2, flexWrap:"wrap" }}>
-      {(reg.parcelas||[]).map(p => <span key={p.n} title={`Parcela ${p.n}: ${p.paga?"paga":"não paga"}`} style={{ width:size, height:size, borderRadius:2, background:p.paga?"#22c55e":"#f97316" }} />)}
+      {inadSituacaoParcelas(reg, hojeLocal()).map(p => { const s = SITUACAO_PARCELA[p.situacao]; return <span key={p.n} title={`Parcela ${p.n}: ${s.rotulo(p)}`} style={{ width:size, height:size, borderRadius:2, background:s.cor }} />; })}
     </div>
   );
 }
@@ -2952,7 +2969,6 @@ function InadRow({ r, employees, perms, onAbrir, onImportante, onAgenda, onEdita
   const cfg = INAD_STATUS_CFG[r.status] || INAD_STATUS_CFG.Cancelado;
   const s = inadResumoParcelas(r);
   const tempo = inadTempo(r.dataInadimplencia);
-  const resp = employees.find(e => e.id === r.responsavelId);
   const ativo = r.status === "Inadimplente";
   const bg = dark ? (hover ? "#1c3048" : (r.prioridade ? "#1d1f13" : "#1e293b")) : (hover ? "#f6f9fc" : (r.prioridade ? "#fff8f1" : "#fff"));
   const stop = fn => e => { e.stopPropagation(); fn(); };
@@ -2987,9 +3003,6 @@ function InadRow({ r, employees, perms, onAbrir, onImportante, onAgenda, onEdita
       {/* Valor + responsável */}
       <div style={{ flex:"0 0 150px", padding:"11px 16px", display:"flex", flexDirection:"column", justifyContent:"center", gap:4 }}>
         <span style={{ fontSize:14, fontWeight:800, color: ativo ? (dark?"#f87171":"#b91c1c") : t.textMuted }}>{r.valorAReceber != null ? gcFmtBRL(r.valorAReceber) : "—"}</span>
-        {resp
-          ? <div style={{ display:"flex", alignItems:"center", gap:4 }}><Avatar name={resp.name} color={resp.color} size={14} /><span style={{ fontSize:11, color:t.textMuted }}>{resp.name}</span></div>
-          : <span style={{ fontSize:11, color:t.textMuted }}>sem responsável</span>}
       </div>
 
       {/* Status + ações */}

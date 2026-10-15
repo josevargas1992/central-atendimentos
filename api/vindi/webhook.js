@@ -4,10 +4,11 @@ import { getDb } from "../../server/firebaseAdmin.js";
 import { lerConfigVindi } from "../../server/vindi/config.js";
 import { criarClienteVindi } from "../../server/vindi/cliente.js";
 import { criarHandlerWebhook } from "../../server/vindi/webhook.js";
+import { comLimiteDeTempo } from "../../server/limiteTempo.js";
 
-export default criarHandlerWebhook({
+export default comLimiteDeTempo(criarHandlerWebhook({
   getDb,
   lerConfig: () => lerConfigVindi(),
   criarCliente: cfg => criarClienteVindi({ apiKey: cfg.apiKey, baseUrl: cfg.baseUrl }),
   waitUntil,
-});
+}));

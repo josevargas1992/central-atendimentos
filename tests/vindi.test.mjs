@@ -426,3 +426,37 @@ test("Admin: reprocessa eventos que ficaram pendentes (ex.: falha da API na hora
   assert.match(r.body.mensagem, /1 evento\(s\) reprocessado/);
   assert.equal((await ler()).status, "Regularizado");
 });
+
+// ── Limite de tempo das funções ───────────────────────────────────────
+import { comLimiteDeTempo } from "../server/limiteTempo.js";
+
+test("função que trava responde 504 com mensagem clara (não fica pendurada)", async () => {
+  const travada = comLimiteDeTempo(() => new Promise(() => {}), 50);
+  const r = await chamarSimples(travada, req({}));
+  assert.equal(r.status, 504);
+  assert.match(r.body.erro, /demorou demais/);
+  const rapida = comLimiteDeTempo(async (q, s) => s.status(200).json({ ok: true }), 50);
+  assert.equal((await chamarSimples(rapida, req({}))).status, 200);
+  const quebrada = comLimiteDeTempo(async () => { throw new Error("x"); }, 50);
+  assert.equal((await chamarSimples(quebrada, req({}))).status, 500);
+});
+
+test("testar conexão: reporta Vindi e banco separadamente; banco com problema não esconde a Vindi", async () => {
+  const ok = await chamarSimples(hStatus({ testarConexao: async () => true }), req({ acao: "testar" }));
+  assert.equal(ok.body.conexao, "ok");
+  assert.equal(ok.body.vindi.ok, true);
+  assert.equal(ok.body.banco.ok, true);
+  const semBanco = criarHandlerStatus({ getDb: () => { throw new Error("8 RESOURCE_EXHAUSTED: Quota exceeded."); }, lerConfig: () => CFG, criarCliente: () => ({ testarConexao: async () => true }) });
+  const r = await chamarSimples(semBanco, req({ acao: "testar" }));
+  assert.equal(r.body.conexao, "erro");
+  assert.equal(r.body.vindi.ok, true, "a Vindi foi testada mesmo com o banco falhando");
+  assert.match(r.body.banco.mensagem, /cota excedida/);
+});
+
+test("conta de serviço de outro projeto é identificada no status", async () => {
+  const { configuracaoPublica } = await import("../server/vindi/config.js");
+  const p = configuracaoPublica(CFG, { FIREBASE_SERVICE_ACCOUNT: JSON.stringify({ project_id: "outro-projeto", private_key: "SEGREDO" }), VITE_FIREBASE_PROJECT_ID: "projeto-do-app" });
+  assert.equal(p.firebaseProjetoServidor, "outro-projeto");
+  assert.equal(p.firebaseProjetoApp, "projeto-do-app");
+  assert.ok(!JSON.stringify(p).includes("SEGREDO"));
+});

@@ -21,12 +21,19 @@ export function lerConfigVindi(env = process.env) {
   };
 }
 
+// Projeto do Firebase da conta de serviço (o ID do projeto não é segredo). null se ausente/inválida.
+export function projetoDaContaDeServico(env = process.env) {
+  try { return JSON.parse(env.FIREBASE_SERVICE_ACCOUNT || "").project_id || null; } catch { return env.FIREBASE_SERVICE_ACCOUNT ? "invalido" : null; }
+}
+
 // O que pode ser mostrado no painel do Admin: nunca a chave nem a senha do webhook.
-export function configuracaoPublica(cfg) {
+export function configuracaoPublica(cfg, env = process.env) {
   return {
     ambiente: cfg.ambiente,
     apiConfigurada: cfg.apiConfigurada,
     webhookConfigurado: cfg.webhookConfigurado,
     chaveFinal: cfg.apiKey ? `••••${cfg.apiKey.slice(-4)}` : null,
+    firebaseProjetoServidor: projetoDaContaDeServico(env),
+    firebaseProjetoApp: env.VITE_FIREBASE_PROJECT_ID || null,
   };
 }

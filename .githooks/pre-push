@@ -1,6 +1,12 @@
 #!/bin/sh
 # Antes de qualquer push (deploy), salva no Google Drive um backup completo do Firestore + código (git bundle).
 # Se o backup falhar, o push é cancelado — nenhum deploy sai sem backup.
+# Só o push para "vercel" publica o site — é nele que o backup roda. (Cada backup lê o banco
+# inteiro; rodar também no push para "origin" dobrava o consumo da cota de leituras.)
+if [ "$1" != "vercel" ]; then
+  echo "▶ Push para '$1' (não publica): backup não é necessário."
+  exit 0
+fi
 echo "▶ Backup do Firestore antes do push para '$1'..."
 if ! npm run --silent backup:drive; then
   echo "✗ Backup falhou — push CANCELADO. Verifique se o Google Drive (G:) está disponível."

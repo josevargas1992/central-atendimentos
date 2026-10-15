@@ -4,9 +4,10 @@ import { getDb } from "../../server/firebaseAdmin.js";
 import { lerConfigVindi } from "../../server/vindi/config.js";
 import { criarClienteVindi } from "../../server/vindi/cliente.js";
 import { criarHandlerStatus } from "../../server/vindi/endpoints.js";
+import { comLimiteDeTempo } from "../../server/limiteTempo.js";
 
-export default criarHandlerStatus({
+export default comLimiteDeTempo(criarHandlerStatus({
   getDb,
   lerConfig: () => lerConfigVindi(),
   criarCliente: cfg => criarClienteVindi({ apiKey: cfg.apiKey, baseUrl: cfg.baseUrl }),
-});
+}));

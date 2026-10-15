@@ -82,13 +82,27 @@ export function criarHandlerStatus({ getDb, lerConfig, criarCliente }) {
 
     const acao = corpoJson(req)?.acao;
     if (!cfg.apiConfigurada) return responder(res, 503, { ...base, erro: "Integração não configurada (defina VINDI_AMBIENTE e VINDI_API_KEY na Vercel)." });
-    const db = getDb();
-    if (!(await dentroDoLimite(db, "admin", 10))) return responder(res, 429, { erro: "Muitas solicitações. Aguarde um minuto." });
 
     if (acao === "testar") {
-      try { await criarCliente(cfg).testarConexao(); return responder(res, 200, { ...base, conexao: "ok", mensagem: `Conexão com a Vindi (${cfg.ambiente === "producao" ? "produção" : "teste/sandbox"}) funcionando.` }); }
-      catch (e) { return responder(res, 200, { ...base, conexao: "erro", mensagem: e instanceof ErroVindi ? e.message : "Falha ao testar a conexão." }); }
+      // Diagnóstico: testa a Vindi e o banco separadamente (um problema no banco não esconde o resultado da Vindi).
+      let db = null, banco;
+      try {
+        db = getDb();
+        if (!(await dentroDoLimite(db, "admin", 10))) return responder(res, 429, { erro: "Muitas solicitações. Aguarde um minuto." });
+        banco = { ok: true, mensagem: "Banco de dados (Firestore) acessível pelo servidor." };
+      } catch (e) {
+        console.error("testar: banco", e?.message);
+        const cota = /RESOURCE_EXHAUSTED|quota/i.test(e?.message || "");
+        banco = { ok: false, mensagem: cota ? "O Firestore recusou por cota excedida (plano/limite do projeto Firebase da conta de serviço)." : `Falha ao acessar o Firestore: ${String(e?.message || "erro desconhecido").slice(0, 200)}` };
+      }
+      let vindi;
+      try { await criarCliente(cfg).testarConexao(); vindi = { ok: true, mensagem: `Conexão com a Vindi (${cfg.ambiente === "producao" ? "produção" : "teste/sandbox"}) funcionando.` }; }
+      catch (e) { vindi = { ok: false, mensagem: e instanceof ErroVindi ? e.message : "Falha ao testar a conexão com a Vindi." }; }
+      return responder(res, 200, { ...base, conexao: vindi.ok && banco.ok ? "ok" : "erro", vindi, banco, mensagem: `Vindi: ${vindi.ok ? "✓" : "✗"} ${vindi.mensagem}  ·  Banco: ${banco.ok ? "✓" : "✗"} ${banco.mensagem}` });
     }
+
+    const db = getDb();
+    if (!(await dentroDoLimite(db, "admin", 10))) return responder(res, 429, { erro: "Muitas solicitações. Aguarde um minuto." });
     if (acao === "reprocessar") {
       // Reprocessa eventos que ficaram pendentes ou com erro (até 15 por vez).
       const pend = (await db.collection(COL_EVENTOS).where("status", "in", ["pendente", "erro"]).limit(15).get()).docs;

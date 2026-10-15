@@ -3,9 +3,10 @@ import { getDb } from "../../server/firebaseAdmin.js";
 import { lerConfigVindi } from "../../server/vindi/config.js";
 import { criarClienteVindi } from "../../server/vindi/cliente.js";
 import { criarHandlerSincronizar } from "../../server/vindi/endpoints.js";
+import { comLimiteDeTempo } from "../../server/limiteTempo.js";
 
-export default criarHandlerSincronizar({
+export default comLimiteDeTempo(criarHandlerSincronizar({
   getDb,
   lerConfig: () => lerConfigVindi(),
   criarCliente: cfg => criarClienteVindi({ apiKey: cfg.apiKey, baseUrl: cfg.baseUrl }),
-});
+}));

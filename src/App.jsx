@@ -3231,6 +3231,7 @@ function VindiAdminCard() {
               {item("Ambiente", ambiente ? <span style={{ color:ambiente[1] }}>{ambiente[0]}</span> : "não definido")}
               {item("Chave da API", info.apiConfigurada ? `configurada (${info.chaveFinal})` : "não configurada")}
               {item("Webhook", info.webhookConfigurado ? "usuário e senha configurados" : "não configurado")}
+              {item("Projeto Firebase do servidor", !info.firebaseProjetoServidor ? "conta de serviço não configurada" : info.firebaseProjetoServidor === "invalido" ? <span style={{ color:"#dc2626" }}>conta de serviço inválida (JSON)</span> : info.firebaseProjetoApp && info.firebaseProjetoServidor !== info.firebaseProjetoApp ? <span style={{ color:"#dc2626" }}>{info.firebaseProjetoServidor} ≠ {info.firebaseProjetoApp} (projeto errado!)</span> : <span style={{ color:"#16a34a" }}>{info.firebaseProjetoServidor} ✓</span>)}
               {item("Eventos pendentes ou com erro", pendentes)}
             </div>
             <div style={{ marginTop:12, fontSize:12.5, color:t.textSub }}>

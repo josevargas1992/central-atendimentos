@@ -43,8 +43,10 @@ export function apurarFaturas(bills, agora = new Date(), originais = {}) {
 
   for (const b of bills || []) {
     const vencimentoVindi = dataSP(b.due_at);
-    const orig = originais[String(b.id)];
-    const vencimento = orig && (!vencimentoVindi || orig < vencimentoVindi) ? orig : vencimentoVindi;
+    // Reemissão (2ª via) cancela a cobrança antiga e cria outra: a antiga continua na fatura com o
+    // vencimento anterior — assim se recupera o original mesmo de prorrogações antigas.
+    const datas = [originais[String(b.id)], vencimentoVindi, ...(b.charges || []).map(c => dataSP(c.due_at))].filter(Boolean).sort();
+    const vencimento = datas[0] || null;
     const pagas = (b.charges || []).filter(c => c.status === "paid" && c.paid_at).map(c => c.paid_at).sort();
     const f = {
       id: b.id,

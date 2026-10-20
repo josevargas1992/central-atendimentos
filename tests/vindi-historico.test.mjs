@@ -200,6 +200,21 @@ test("prorrogação na Vindi (caso real de 20/10): vencimento original é mantid
   assert.equal(d.vindi.historico["1"].diasAtraso, 5);
 });
 
+test("prorrogação antiga por reemissão (caso Gisele): o vencimento da cobrança cancelada é o original", async () => {
+  // Parcela 10 vencia 13/10; 2ª via com vencimento 15/10 (cobrança antiga cancelada); paga em 15/10.
+  const b = billC(1, 10, "2026-10-15", "paid", null, "2026-10-15T16:22:00-03:00");
+  b.charges = [
+    { id: 11, status: "canceled", due_at: "2026-10-13T00:00:00.000-03:00" },
+    { id: 12, status: "paid", due_at: "2026-10-15T00:00:00.000-03:00", paid_at: "2026-10-15T16:20:00.000-03:00" },
+  ];
+  await sinc(await criarInad(), vindiFake({ assinaturas: SUB12, faturas: [b] }));
+  const h = (await ler()).vindi.historico["1"];
+  assert.equal(h.vencimento, "2026-10-13");
+  assert.equal(h.vencimentoVindi, "2026-10-15");
+  assert.equal(h.situacao, "pagaAtraso");
+  assert.equal(h.diasAtraso, 2);
+});
+
 test("prorrogação em registro ainda sem histórico: usa o vencimento da última sincronização", async () => {
   await criarInad({ vindi: { assinaturaId: "5001", faturas: [{ id: "1", status: "pending", vencimento: "2026-10-09", vencida: true }], vencidasQtd: 1 } });
   await sinc(await atual(), vindiFake({ assinaturas: SUB12, faturas: [billC(1, 5, "2026-10-20", "pending", null, "2026-10-13T11:38:00-03:00")] }));

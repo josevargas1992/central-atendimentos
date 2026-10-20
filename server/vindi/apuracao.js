@@ -32,19 +32,26 @@ export function dataSP(iso) {
 
 const diasEntre = (a, b) => Math.round((Date.UTC(...b.split("-").map((n, i) => i === 1 ? n - 1 : +n)) - Date.UTC(...a.split("-").map((n, i) => i === 1 ? n - 1 : +n))) / 86400000);
 
-export function apurarFaturas(bills, agora = new Date()) {
+// originais: { idFatura: "AAAA-MM-DD" } — vencimentos já vistos antes. A Vindi ALTERA o due_at da
+// própria fatura quando o vencimento é prorrogado (visto em 20/10/2026: 36 faturas vencidas passaram
+// a vencer "hoje", sem pagamento). Por isso "vencimento" é sempre o MAIS ANTIGO conhecido (original);
+// o atual da Vindi fica em "vencimentoVindi". Prorrogar não tira o cliente da inadimplência.
+export function apurarFaturas(bills, agora = new Date(), originais = {}) {
   const hoje = dataSP(agora.toISOString());
   const faturas = [];
   let semVencimento = 0, atualizadoFonte = null;
 
   for (const b of bills || []) {
-    const vencimento = dataSP(b.due_at);
+    const vencimentoVindi = dataSP(b.due_at);
+    const orig = originais[String(b.id)];
+    const vencimento = orig && (!vencimentoVindi || orig < vencimentoVindi) ? orig : vencimentoVindi;
     const pagas = (b.charges || []).filter(c => c.status === "paid" && c.paid_at).map(c => c.paid_at).sort();
     const f = {
       id: b.id,
       status: b.status || null,
       valorCentavos: centavos(b.amount),
       vencimento,
+      vencimentoVindi,
       pagoEm: b.status === "paid" && pagas.length ? dataSP(pagas[pagas.length - 1]) : null,
       vencida: b.status === "pending" && !!vencimento && vencimento < hoje,
       ciclo: Number.isInteger(b.period?.cycle) ? b.period.cycle : null,

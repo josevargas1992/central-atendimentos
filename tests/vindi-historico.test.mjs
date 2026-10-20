@@ -178,6 +178,36 @@ test("cenário 6: nova sincronização de cliente regularizado preserva o histó
   assert.equal(d.vindi.historico["3"].situacao, "pendente");
 });
 
+test("prorrogação na Vindi (caso real de 20/10): vencimento original é mantido e o cliente NÃO é regularizado", async () => {
+  // 1ª sincronização: fatura vencida em 09/10 → Inadimplente
+  await sinc(await criarInad(), vindiFake({ assinaturas: SUB12, faturas: [billC(1, 5, "2026-10-09", "pending", null, "2026-10-01T10:00:00-03:00")] }));
+  assert.equal((await ler()).vindi.vencidasQtd, 1);
+  // A Vindi muda o due_at da MESMA fatura para 20/10 (sem pagamento)
+  await sinc(await atual(), vindiFake({ assinaturas: SUB12, faturas: [billC(1, 5, "2026-10-20", "pending", null, "2026-10-13T11:38:00-03:00")] }));
+  let d = await ler();
+  assert.equal(d.status, "Inadimplente", "prorrogar não é pagar");
+  assert.equal(d.vindi.vencidasQtd, 1);
+  assert.equal(d.vindi.historico["1"].vencimento, "2026-10-09");
+  assert.equal(d.vindi.historico["1"].vencimentoVindi, "2026-10-20");
+  const q = inadSituacaoParcelas(d, "2026-10-14")[4];
+  assert.equal(q.situacao, "vencida");
+  assert.equal(q.prorrogadaPara, "2026-10-20");
+  // Paga depois, no novo prazo: Paga em atraso, contando do vencimento original
+  await sinc(await atual(), vindiFake({ assinaturas: SUB12, faturas: [billC(1, 5, "2026-10-20", "paid", "2026-10-14", "2026-10-14T09:00:00-03:00")] }));
+  d = await ler();
+  assert.equal(d.status, "Regularizado");
+  assert.equal(d.vindi.historico["1"].situacao, "pagaAtraso");
+  assert.equal(d.vindi.historico["1"].diasAtraso, 5);
+});
+
+test("prorrogação em registro ainda sem histórico: usa o vencimento da última sincronização", async () => {
+  await criarInad({ vindi: { assinaturaId: "5001", faturas: [{ id: "1", status: "pending", vencimento: "2026-10-09", vencida: true }], vencidasQtd: 1 } });
+  await sinc(await atual(), vindiFake({ assinaturas: SUB12, faturas: [billC(1, 5, "2026-10-20", "pending", null, "2026-10-13T11:38:00-03:00")] }));
+  const d = await ler();
+  assert.equal(d.status, "Inadimplente");
+  assert.equal(d.vindi.historico["1"].vencimento, "2026-10-09");
+});
+
 // ── Cancelamento ──────────────────────────────────────────────────────
 
 test("cenário 1: assinatura cancelada na Vindi → Cancelado, com data e origem do cancelamento", async () => {

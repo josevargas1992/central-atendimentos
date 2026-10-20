@@ -220,7 +220,8 @@ function situacaoPeloHistorico(reg, hoje) {
   return Array.from({ length: total }, (_, i) => {
     const n = i + 1, e = porN.get(n);
     if (!e) return { n, total, situacao: "naoGerada" };
-    const base = { n, total, faturaId: e.id, vencimento: e.vencimento || null, valorCentavos: e.valorCentavos ?? null };
+    const base = { n, total, faturaId: e.id, vencimento: e.vencimento || null, valorCentavos: e.valorCentavos ?? null,
+      ...(e.vencimentoVindi && e.vencimento && e.vencimentoVindi > e.vencimento ? { prorrogadaPara: e.vencimentoVindi } : {}) };
     if (e.situacao === "pagaAtraso") return { ...base, situacao: "pagaAtraso", pagoEm: e.pagoEm, diasAtraso: e.diasAtraso };
     if (e.situacao === "paga" || e.situacao === "pagaSemData") return { ...base, situacao: "paga", pagoEm: e.pagoEm || null, diasAtraso: e.diasAtraso ?? null };
     if (e.situacao === "cancelada") return { ...base, situacao: "vencida", canceladaNaVindi: true };

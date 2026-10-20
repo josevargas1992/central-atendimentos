@@ -82,7 +82,7 @@ export function entradaHistorico(f) {
   } else if (f.status === "pending" || f.status === "scheduled" || f.status === "review") situacao = "pendente";
   else if (f.status === "canceled") situacao = "cancelada";
   return {
-    id: String(f.id), ciclo: f.ciclo ?? null, vencimento: f.vencimento || null, valorCentavos: f.valorCentavos ?? null,
+    id: String(f.id), ciclo: f.ciclo ?? null, vencimento: f.vencimento || null, vencimentoVindi: f.vencimentoVindi || f.vencimento || null, valorCentavos: f.valorCentavos ?? null,
     status: f.status || null, situacao, pagoEm: f.pagoEm || null, diasAtraso, atualizadoFonte: f.atualizadoFonte || null,
   };
 }
@@ -100,7 +100,9 @@ export function mesclarHistorico(anterior, faturas, agoraISO) {
     if (f?.id === undefined || f?.id === null) continue;
     const id = String(f.id), ant = historico[id];
     if (ant?.atualizadoFonte && f.atualizadoFonte && f.atualizadoFonte < ant.atualizadoFonte) continue;
-    const nova = { ...entradaHistorico(f), registradoEm: ant?.registradoEm || agoraISO };
+    // Vencimento original: o mais antigo já visto (prorrogação na Vindi não apaga o original).
+    const fo = ant?.vencimento && f.vencimento && ant.vencimento < f.vencimento ? { ...f, vencimento: ant.vencimento } : f;
+    const nova = { ...entradaHistorico(fo), registradoEm: ant?.registradoEm || agoraISO };
     const pagaAntes = ant && (ant.situacao === "paga" || ant.situacao === "pagaAtraso" || ant.situacao === "pagaSemData");
     const pagaAgora = nova.situacao === "paga" || nova.situacao === "pagaAtraso" || nova.situacao === "pagaSemData";
     // A Vindi zera o valor da fatura cancelada: guarda o valor conhecido de antes (ou o da cobrança).

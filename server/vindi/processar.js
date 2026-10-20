@@ -57,7 +57,7 @@ async function resolverAssinatura(cliente, reg) {
 const resumoFaturas = faturas => faturas
   .sort((a, b) => (b.vencimento || "").localeCompare(a.vencimento || ""))
   .slice(0, MAX_FATURAS_GUARDADAS)
-  .map(f => ({ id: String(f.id), status: f.status, valorCentavos: f.valorCentavos, vencimento: f.vencimento, pagoEm: f.pagoEm, vencida: f.vencida }));
+  .map(f => ({ id: String(f.id), status: f.status, valorCentavos: f.valorCentavos, vencimento: f.vencimento, vencimentoVindi: f.vencimentoVindi || null, pagoEm: f.pagoEm, vencida: f.vencida }));
 
 // Sincroniza um registro. Nunca lança erro: devolve { resultado, ... } e grava o histórico.
 // ambiente "sandbox" → apenas registra no histórico (marcado como teste), nunca altera o inadimplente.
@@ -84,13 +84,17 @@ export async function sincronizarRegistro({ db, cliente, registro, origem, event
       return { resultado: "sem_identificador", mensagem: msg };
     }
     const bills = r.assinatura ? await cliente.faturasDaAssinatura(r.assinatura.id) : [r.faturaAvulsa];
-    const ap = apurarFaturas(bills, agora);
     // true/false conforme a assinatura; null para fatura avulsa (não há assinatura para conferir)
     const assinaturaCancelada = r.assinatura ? r.assinatura.status === "canceled" : null;
 
     // Monta o novo campo "vindi" a partir do estado ATUAL do registro (lido de novo na transação).
     const montar = atual => {
       const vAnt = atual.vindi || {};
+      // Vencimentos já conhecidos (histórico e última sincronização) — preservam o original se a Vindi prorrogar.
+      const originais = {};
+      for (const f of [...(vAnt.faturas || []), ...Object.values(vAnt.historico || {})])
+        if (f?.id != null && f.vencimento && (!originais[String(f.id)] || f.vencimento < originais[String(f.id)])) originais[String(f.id)] = f.vencimento;
+      const ap = apurarFaturas(bills, agora, originais);
       // Proteção contra dados antigos: se a Vindi devolver algo mais velho do que já gravado, não aplica.
       if (vAnt.atualizadoFonte && ap.atualizadoFonte && ap.atualizadoFonte < vAnt.atualizadoFonte) return { antigo: true };
       // Histórico permanente por fatura: só acrescenta/atualiza, nunca apaga.

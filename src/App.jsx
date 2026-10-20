@@ -492,6 +492,7 @@ const CHANGELOG = [
     entries: [
       { type: "correcao", text: "Inadimplentes: assinatura cancelada na Vindi agora muda o status para Cancelado automaticamente (antes podia aparecer como Regularizado). O valor que ficou em aberto no cancelamento aparece nos detalhes." },
       { type: "novo",     text: "Inadimplentes: quadradinho azul = parcela paga em atraso. Passe o mouse para ver o vencimento original, a data do pagamento e os dias de atraso." },
+      { type: "correcao", text: "Inadimplentes: fatura com vencimento prorrogado na Vindi continua contando como vencida desde o vencimento original — prorrogar não regulariza o cliente." },
       { type: "novo",     text: "Inadimplentes: histórico financeiro das parcelas nos detalhes do cliente (no prazo, em atraso, vencidas, não geradas), mantido mesmo depois de Regularizado ou Cancelado." },
     ],
   },
@@ -2962,7 +2963,7 @@ function InadStatusBadge({ status }) {
 const SITUACAO_PARCELA = {
   paga:      { cor:"#22c55e", rotulo: p => `paga${p.pagoEm ? " em " + fmtDataBR(p.pagoEm) : ""}` },
   pagaAtraso:{ cor:"#3b82f6", rotulo: p => `paga em atraso · vencimento original ${fmtDataBR(p.vencimento)} · pago em ${fmtDataBR(p.pagoEm)} · ${p.diasAtraso} ${p.diasAtraso === 1 ? "dia" : "dias"} de atraso` },
-  vencida:   { cor:"#f97316", rotulo: p => `atrasada (venceu em ${fmtDataBR(p.vencimento)})${p.canceladaNaVindi ? " — em aberto no cancelamento" : ""}` },
+  vencida:   { cor:"#f97316", rotulo: p => `atrasada (venceu em ${fmtDataBR(p.vencimento)}${p.prorrogadaPara ? "; prorrogada na Vindi para " + fmtDataBR(p.prorrogadaPara) : ""})${p.canceladaNaVindi ? " — em aberto no cancelamento" : ""}` },
   aVencer:   { cor:"#cbd5e1", rotulo: p => `gerada, ${p.vencimento ? "vence em " + fmtDataBR(p.vencimento) : "ainda não vencida"}` },
   naoGerada: { cor:"#cbd5e1", rotulo: () => "ainda não gerada" },
   naoPaga:   { cor:"#cbd5e1", rotulo: () => "não paga — sincronize com a Vindi para saber se está atrasada" },
@@ -3245,7 +3246,7 @@ function InadHistoricoFinanceiro({ reg }) {
             {parcelas.map(p => { const [rot, cor, bg] = SITUACAO_HISTORICO[p.situacao] || [p.situacao, t.textSub, t.btnSecBg]; return (
               <tr key={p.n}>
                 <td style={{ ...td, color:t.text, whiteSpace:"nowrap" }}>{p.n} de {p.total}</td>
-                <td style={{ ...td, color:t.text }}>{p.vencimento ? fmtDataBR(p.vencimento) : "—"}</td>
+                <td style={{ ...td, color:t.text }}>{p.vencimento ? fmtDataBR(p.vencimento) : "—"}{p.prorrogadaPara && <div style={{ fontSize:11, color:t.textMuted }}>prorrogada para {fmtDataBR(p.prorrogadaPara)}</div>}</td>
                 <td style={{ ...td, color:t.text }}>{p.valorCentavos != null ? fmtCentavos(p.valorCentavos) : "—"}</td>
                 <td style={td}>
                   <span style={{ padding:"2px 8px", borderRadius:20, fontSize:11, fontWeight:700, color:dark?"#e2e8f0":cor, background:dark?"rgba(255,255,255,0.08)":bg, whiteSpace:"nowrap" }}>{p.situacao === "paga" && p.diasAtraso == null ? "Paga" : rot}</span>

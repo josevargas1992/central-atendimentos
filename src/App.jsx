@@ -491,6 +491,7 @@ const CHANGELOG = [
     date: "Out 2026",
     entries: [
       { type: "correcao", text: "Inadimplentes: assinatura cancelada na Vindi agora muda o status para Cancelado automaticamente (antes podia aparecer como Regularizado). O valor que ficou em aberto no cancelamento aparece nos detalhes." },
+      { type: "novo",     text: "Inadimplentes: todo dia de madrugada o app confere todos os clientes na Vindi automaticamente — inclusive os recém-importados da planilha e faturas que venceram sem pagamento." },
       { type: "novo",     text: "Inadimplentes: quadradinho azul = parcela paga em atraso. Passe o mouse para ver o vencimento original, a data do pagamento e os dias de atraso." },
       { type: "correcao", text: "Inadimplentes: fatura com vencimento prorrogado na Vindi continua contando como vencida desde o vencimento original — prorrogar não regulariza o cliente." },
       { type: "novo",     text: "Inadimplentes: histórico financeiro das parcelas nos detalhes do cliente (no prazo, em atraso, vencidas, não geradas), mantido mesmo depois de Regularizado ou Cancelado." },

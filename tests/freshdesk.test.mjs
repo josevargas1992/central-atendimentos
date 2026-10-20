@@ -108,3 +108,18 @@ test("endpoint: sem configuração → 503; método POST → 405", async () => {
   assert.equal(r.status, 503);
   assert.equal((await chamar(handler(), { method: "POST", headers: { authorization: `Bearer ${TOKEN_ADMIN}` } })).status, 405);
 });
+
+// ── /api/admin/eu (login do admin pelo Firebase) ──────────────────────
+import { criarHandlerAdminEu } from "../server/adminEu.js";
+
+test("admin/eu: sem login 401, token inválido 401, usuário comum 403, admin 200; POST 405", async () => {
+  const h = criarHandlerAdminEu({ verificarToken, lerAdmins: () => lerAdminUids({ ADMIN_UIDS: "uid-admin" }) });
+  const r = async (headers, method = "GET") => chamar(h, { method, headers });
+  assert.equal((await r({})).status, 401);
+  assert.equal((await r({ authorization: "Bearer lixo.lixo.lixoaaaaaaaaaaaaaaaaaa" })).status, 401);
+  const comum = await r({ authorization: `Bearer ${TOKEN_COMUM}` });
+  assert.equal(comum.status, 403); assert.equal(comum.body.admin, false);
+  const adm = await r({ authorization: `Bearer ${TOKEN_ADMIN}` });
+  assert.deepEqual([adm.status, adm.body], [200, { admin: true }]);
+  assert.equal((await r({ authorization: `Bearer ${TOKEN_ADMIN}` }, "POST")).status, 405);
+});

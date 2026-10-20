@@ -1,7 +1,7 @@
 ﻿import { useState, useEffect, useRef, createContext, useContext } from "react";
 import { collection, doc, getDocs, getDoc, setDoc, updateDoc, arrayUnion, deleteDoc, writeBatch, query, where, onSnapshot } from "firebase/firestore";
 import { db, auth, isSafeMode } from "./firebase";
-import { signInWithEmailAndPassword, signOut, onAuthStateChanged } from "firebase/auth";
+import { signInWithEmailAndPassword, signOut, onAuthStateChanged, sendPasswordResetEmail } from "firebase/auth";
 import * as store from "./data";
 import { consultarLogike, descreverTesteLogike } from "./logike";
 import { satNorm, satParseData, satAgruparPorMes, satDistribuir } from "./satisfacao";
@@ -10,7 +10,12 @@ import * as XLSX from "xlsx";
 
 // ── Constants ─────────────────────────────────────────────────────────
 
-const ADMIN_CRED = { id:"admin", password:"462b525C" };
+// Login do admin — Etapa 2 da migração para o Firebase Authentication:
+// • VITE_ADMIN_LOGIN_FIREBASE=1 (variável da Vercel, lida no build): só o login do Firebase; a senha fixa
+//   abaixo NÃO entra no código publicado (o build elimina o ramo e a constante).
+// • Sem a variável: a senha de sempre continua valendo, com a opção de entrar pelo Firebase (para testar).
+const ADMIN_LOGIN_SO_FIREBASE = import.meta.env.VITE_ADMIN_LOGIN_FIREBASE === "1";
+const ADMIN_CRED = ADMIN_LOGIN_SO_FIREBASE ? null : { id:"admin", password:"462b525C" };
 
 const DEFAULT_EMPLOYEES = [
   { id:"gabriele",    name:"Gabriele",    password:"gabi123",    color:"#8b5cf6" },
@@ -477,10 +482,18 @@ function RecordRow({ r, employees, tiposMap, togglePrio, togglePesquisa, updateS
 
 // ──────────────────────────────────────────────────────────────────────
 
-const CHANGELOG_VERSION = "1.6.1";
+const CHANGELOG_VERSION = "1.6.2";
 const CHANGELOG_KEY = `changelog_seen_${CHANGELOG_VERSION}`;
 
 const CHANGELOG = [
+  {
+    version: "1.6.2",
+    date: "Out 2026",
+    entries: [
+      { type: "novo", text: "Administrador: novo acesso com e-mail e senha (conta Firebase), com opção \"Esqueci a senha\". O acesso dos atendentes não muda." },
+      { type: "novo", text: "Administrador: teste de conexão com o Freshdesk no painel (só confere a conexão — não cria tickets nem envia e-mails)." },
+    ],
+  },
   {
     version: "1.6.1",
     date: "Out 2026",
@@ -4092,6 +4105,10 @@ function LoginScreen({ onLogin, onAdmin }) {
   const [showAdmForm, setShowAdmForm] = useState(false);
   const [admPw,       setAdmPw]       = useState("");
   const [admErr,      setAdmErr]      = useState("");
+  const [admModo,     setAdmModo]     = useState(ADMIN_LOGIN_SO_FIREBASE ? "firebase" : "senha");
+  const [admEmail,    setAdmEmail]    = useState("");
+  const [admOcupado,  setAdmOcupado]  = useState(false);
+  const [admAviso,    setAdmAviso]    = useState("");
 
   const [loadError,   setLoadError]   = useState(false);
 
@@ -4103,8 +4120,34 @@ function LoginScreen({ onLogin, onAdmin }) {
     else { setError("Senha incorreta. Tente novamente."); setPw(""); }
   };
   const attemptAdmin = () => {
+    if (!ADMIN_CRED) return;
     if (admPw === ADMIN_CRED.password) onAdmin();
     else { setAdmErr("Senha de administrador incorreta."); setAdmPw(""); }
+  };
+  // Login do admin pelo Firebase: entra na conta e o SERVIDOR confirma se ela é administradora.
+  const attemptAdminFirebase = async () => {
+    if (admOcupado || !admEmail.trim() || !admPw) return;
+    setAdmOcupado(true); setAdmErr(""); setAdmAviso("");
+    try {
+      const cred = await signInWithEmailAndPassword(auth, admEmail.trim(), admPw);
+      const res = await fetch("/api/admin/eu", { headers: { Authorization: `Bearer ${await cred.user.getIdToken()}` } });
+      if (!(res.headers.get("content-type") || "").includes("application/json")) {
+        await signOut(auth); setAdmErr("O login pelo Firebase só funciona no site publicado (ou com 'vercel dev').");
+      } else if (res.ok && (await res.json()).admin) {
+        setAdmPw(""); onAdmin();
+      } else {
+        await signOut(auth); setAdmErr("Esta conta não tem permissão de administrador."); setAdmPw("");
+      }
+    } catch (e) {
+      setAdmErr(ERROS_LOGIN[e?.code] || "Não foi possível entrar. Tente novamente."); setAdmPw("");
+    }
+    setAdmOcupado(false);
+  };
+  const esqueciSenha = async () => {
+    if (!admEmail.trim()) { setAdmErr("Digite seu e-mail para receber o link de nova senha."); return; }
+    setAdmErr(""); setAdmAviso("");
+    try { await sendPasswordResetEmail(auth, admEmail.trim()); } catch { /* não revela se o e-mail existe */ }
+    setAdmAviso("Se o e-mail estiver cadastrado, você receberá um link para criar uma nova senha.");
   };
 
   const dInp = { width:"100%", padding:"9px 12px", border:t.dInpBorder, borderRadius:9, fontSize:14, color:t.dInpText, outline:"none", boxSizing:"border-box", background:t.dInpBg, ...FF };
@@ -4176,11 +4219,30 @@ function LoginScreen({ onLogin, onAdmin }) {
                 <button onClick={()=>{setShowAdmForm(false);setAdmErr("");}} style={{ background:"none", border:"none", color:t.loginSub, cursor:"pointer", fontSize:12.5, padding:0, ...FF }}>← Voltar</button>
               </div>
             </div>
-            <Field label="Senha de administrador">
-              <input type="password" value={admPw} onChange={e=>{setAdmPw(e.target.value);setAdmErr("");}} onKeyDown={e=>e.key==="Enter"&&attemptAdmin()} placeholder="Digite a senha..." autoFocus style={dInp} />
-            </Field>
-            {admErr && <p style={{ color:"#f87171", fontSize:13, margin:"-8px 0 14px", fontWeight:500 }}>{admErr}</p>}
-            <button onClick={attemptAdmin} style={{ width:"100%", padding:"11px", background:"#f59e0b", border:"none", borderRadius:8, color:"#fff", fontWeight:600, fontSize:14, cursor:"pointer", ...FF }}>Entrar como Administrador</button>
+            {admModo === "firebase" ? (<>
+              <Field label="E-mail">
+                <input type="email" value={admEmail} onChange={e=>{setAdmEmail(e.target.value);setAdmErr("");}} placeholder="seu@email.com" autoComplete="username" autoFocus style={dInp} />
+              </Field>
+              <Field label="Senha">
+                <input type="password" value={admPw} onChange={e=>{setAdmPw(e.target.value);setAdmErr("");}} onKeyDown={e=>e.key==="Enter"&&attemptAdminFirebase()} placeholder="Digite a senha..." autoComplete="current-password" style={dInp} />
+              </Field>
+              {admErr && <p style={{ color:"#f87171", fontSize:13, margin:"-8px 0 14px", fontWeight:500 }}>{admErr}</p>}
+              {admAviso && <p style={{ color:"#22c55e", fontSize:13, margin:"-8px 0 14px", fontWeight:500 }}>{admAviso}</p>}
+              <button onClick={attemptAdminFirebase} disabled={admOcupado} style={{ width:"100%", padding:"11px", background:"#f59e0b", border:"none", borderRadius:8, color:"#fff", fontWeight:600, fontSize:14, cursor:admOcupado?"wait":"pointer", opacity:admOcupado?0.7:1, ...FF }}>{admOcupado ? "Entrando…" : "Entrar como Administrador"}</button>
+              <div style={{ display:"flex", justifyContent:"space-between", marginTop:12, gap:8, flexWrap:"wrap" }}>
+                <button onClick={esqueciSenha} style={{ background:"none", border:"none", color:t.loginSub, cursor:"pointer", fontSize:12.5, padding:0, ...FF }}>Esqueci a senha</button>
+                {!ADMIN_LOGIN_SO_FIREBASE && <button onClick={()=>{setAdmModo("senha");setAdmErr("");setAdmAviso("");setAdmPw("");}} style={{ background:"none", border:"none", color:t.loginSub, cursor:"pointer", fontSize:12.5, padding:0, ...FF }}>Usar a senha de administrador</button>}
+              </div>
+            </>) : (<>
+              <Field label="Senha de administrador">
+                <input type="password" value={admPw} onChange={e=>{setAdmPw(e.target.value);setAdmErr("");}} onKeyDown={e=>e.key==="Enter"&&attemptAdmin()} placeholder="Digite a senha..." autoFocus style={dInp} />
+              </Field>
+              {admErr && <p style={{ color:"#f87171", fontSize:13, margin:"-8px 0 14px", fontWeight:500 }}>{admErr}</p>}
+              <button onClick={attemptAdmin} style={{ width:"100%", padding:"11px", background:"#f59e0b", border:"none", borderRadius:8, color:"#fff", fontWeight:600, fontSize:14, cursor:"pointer", ...FF }}>Entrar como Administrador</button>
+              <div style={{ textAlign:"center", marginTop:12 }}>
+                <button onClick={()=>{setAdmModo("firebase");setAdmErr("");setAdmPw("");}} style={{ background:"none", border:"none", color:t.loginSub, cursor:"pointer", fontSize:12.5, padding:0, ...FF }}>Entrar com e-mail (Firebase)</button>
+              </div>
+            </>)}
           </div>
 
         ) : (

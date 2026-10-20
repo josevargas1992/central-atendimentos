@@ -4,6 +4,7 @@
 import { createHash } from "node:crypto";
 import { FieldValue } from "firebase-admin/firestore";
 import { apurarFaturas, decidirStatus } from "./apuracao.js";
+import { mesclarHistorico, apurarCancelamento } from "./historico.js";
 import { ErroVindi } from "./cliente.js";
 
 export const COL_INAD   = "inadimplentes";
@@ -84,51 +85,81 @@ export async function sincronizarRegistro({ db, cliente, registro, origem, event
     }
     const bills = r.assinatura ? await cliente.faturasDaAssinatura(r.assinatura.id) : [r.faturaAvulsa];
     const ap = apurarFaturas(bills, agora);
+    // true/false conforme a assinatura; null para fatura avulsa (não há assinatura para conferir)
+    const assinaturaCancelada = r.assinatura ? r.assinatura.status === "canceled" : null;
 
-    // Proteção contra dados antigos: se a Vindi devolver algo mais velho do que já gravado, não aplica.
-    const anterior = registro.vindi?.atualizadoFonte;
-    if (anterior && ap.atualizadoFonte && ap.atualizadoFonte < anterior) {
+    // Monta o novo campo "vindi" a partir do estado ATUAL do registro (lido de novo na transação).
+    const montar = atual => {
+      const vAnt = atual.vindi || {};
+      // Proteção contra dados antigos: se a Vindi devolver algo mais velho do que já gravado, não aplica.
+      if (vAnt.atualizadoFonte && ap.atualizadoFonte && ap.atualizadoFonte < vAnt.atualizadoFonte) return { antigo: true };
+      // Histórico permanente por fatura: só acrescenta/atualiza, nunca apaga.
+      const { historico } = mesclarHistorico(vAnt.historico, ap.faturas, base.em);
+      // Valor em aberto no cancelamento: usa o valor guardado no histórico (a Vindi zera o das canceladas).
+      const cancelApurado = r.assinatura ? apurarCancelamento(r.assinatura, ap.faturas.map(f => ({ ...f, valorCentavos: historico[String(f.id)]?.valorCentavos ?? f.valorCentavos }))) : null;
+      // Cancelamento já registrado (mesma data) não é refeito — webhook repetido não muda nada.
+      const jaRegistrado = !!(cancelApurado && vAnt.cancelamento?.em && vAnt.cancelamento.em === cancelApurado.em);
+      const cancelamento = cancelApurado
+        ? (jaRegistrado ? vAnt.cancelamento : { ...cancelApurado, detectadoEm: base.em, origem })
+        : (vAnt.cancelamento || null);
+      const { novoStatus, divergencia } = decidirStatus({ status: atual.status, statusOrigem: atual.statusOrigem, apuracao: ap, consultaCompleta: true, assinaturaCancelada, cancelamentoJaRegistrado: jaRegistrado });
+      const vindi = {
+        ambiente,
+        assinaturaId: r.assinatura ? String(r.assinatura.id) : null,
+        assinaturaStatus: r.assinatura?.status || null,
+        vinculadoPor: r.via,
+        faturaAvulsaId: r.faturaAvulsa ? String(r.faturaAvulsa.id) : null,
+        vencidasQtd: ap.vencidas.qtd,
+        vencidoCentavos: ap.vencidas.valorCentavos,
+        vencidaMaisAntiga: ap.vencidas.maisAntiga,
+        vencidaMaisRecente: ap.vencidas.maisRecente,
+        diasEmAtraso: ap.vencidas.diasDesdeMaisAntiga,
+        inadimplenteDesde: ap.vencidas.maisAntiga?.vencimento || null,
+        abertasNaoVencidas: ap.abertasNaoVencidas,
+        ultimaPaga: ap.ultimaPaga,
+        faturas: resumoFaturas(ap.faturas),
+        historico,
+        totalParcelasVindi: Number.isInteger(r.assinatura?.billing_cycles) ? r.assinatura.billing_cycles : (vAnt.totalParcelasVindi ?? null),
+        cancelamento,
+        apuracaoConfiavel: ap.confiavel,
+        divergencia: divergencia || null,
+        atualizadoFonte: ap.atualizadoFonte,
+        ultimaSincronizacao: base.em,
+        ultimaTentativa: base.em,
+        sincStatus: ap.confiavel ? "ok" : "incompleto",
+        sincErro: ap.confiavel ? null : "A Vindi não informou dados suficientes (vencimento ou valor) para concluir a situação.",
+      };
+      const alteracoes = {
+        vencidasDe: vAnt.vencidasQtd ?? null, vencidasPara: vindi.vencidasQtd,
+        vencidoDe: vAnt.vencidoCentavos ?? null, vencidoPara: vindi.vencidoCentavos,
+        statusDe: atual.status, statusPara: novoStatus || atual.status,
+      };
+      return { vindi, novoStatus, divergencia, alteracoes };
+    };
+
+    let m;
+    if (teste) m = montar(registro);
+    else m = await db.runTransaction(async tx => {
+      const snap = await tx.get(ref);
+      if (!snap.exists) return { removido: true };
+      const res = montar({ id: snap.id, ...snap.data() });
+      if (res.antigo) return res;
+      const upd = { vindi: res.vindi };
+      if (res.novoStatus) { upd.status = res.novoStatus; upd.statusOrigem = "vindi"; }
+      tx.update(ref, upd);
+      return res;
+    });
+    if (m.removido) {
+      await log({ resultado: "erro", erro: "O registro foi excluído durante a sincronização." });
+      return { resultado: "erro", codigo: "interno", mensagem: "O registro foi excluído durante a sincronização." };
+    }
+    if (m.antigo) {
       await log({ resultado: "ignorado_antigo", assinaturaId: r.assinatura ? String(r.assinatura.id) : null });
       return { resultado: "ignorado_antigo" };
     }
-
-    const consultaCompleta = true;
-    const { novoStatus, divergencia } = decidirStatus({ status: registro.status, statusOrigem: registro.statusOrigem, apuracao: ap, consultaCompleta });
-    const vindi = {
-      ambiente,
-      assinaturaId: r.assinatura ? String(r.assinatura.id) : null,
-      assinaturaStatus: r.assinatura?.status || null,
-      vinculadoPor: r.via,
-      faturaAvulsaId: r.faturaAvulsa ? String(r.faturaAvulsa.id) : null,
-      vencidasQtd: ap.vencidas.qtd,
-      vencidoCentavos: ap.vencidas.valorCentavos,
-      vencidaMaisAntiga: ap.vencidas.maisAntiga,
-      vencidaMaisRecente: ap.vencidas.maisRecente,
-      diasEmAtraso: ap.vencidas.diasDesdeMaisAntiga,
-      inadimplenteDesde: ap.vencidas.maisAntiga?.vencimento || null,
-      abertasNaoVencidas: ap.abertasNaoVencidas,
-      ultimaPaga: ap.ultimaPaga,
-      faturas: resumoFaturas(ap.faturas),
-      apuracaoConfiavel: ap.confiavel,
-      divergencia: divergencia || null,
-      atualizadoFonte: ap.atualizadoFonte,
-      ultimaSincronizacao: base.em,
-      ultimaTentativa: base.em,
-      sincStatus: ap.confiavel ? "ok" : "incompleto",
-      sincErro: ap.confiavel ? null : "A Vindi não informou dados suficientes (vencimento ou valor) para concluir a situação.",
-    };
-    const alteracoes = {
-      vencidasDe: registro.vindi?.vencidasQtd ?? null, vencidasPara: vindi.vencidasQtd,
-      vencidoDe: registro.vindi?.vencidoCentavos ?? null, vencidoPara: vindi.vencidoCentavos,
-      statusDe: registro.status, statusPara: novoStatus || registro.status,
-    };
-
-    if (!teste) {
-      const upd = { vindi };
-      if (novoStatus) { upd.status = novoStatus; upd.statusOrigem = "vindi"; }
-      await ref.update(upd);
-    }
-    await log({ resultado: teste ? "teste" : "ok", assinaturaId: vindi.assinaturaId, alteracoes, divergencia: vindi.divergencia });
+    const { vindi, novoStatus, divergencia, alteracoes } = m;
+    await log({ resultado: teste ? "teste" : "ok", assinaturaId: vindi.assinaturaId, alteracoes, divergencia: vindi.divergencia,
+      ...(vindi.cancelamento && novoStatus === "Cancelado" ? { cancelamento: { em: vindi.cancelamento.em, vencidasQtd: vindi.cancelamento.vencidasQtd, valorEmAbertoCentavos: vindi.cancelamento.valorEmAbertoCentavos } } : {}) });
     return { resultado: teste ? "teste" : "ok", vindi, novoStatus, divergencia };
   } catch (e) {
     const codigo = e instanceof ErroVindi ? e.codigo : "interno";

@@ -47,6 +47,10 @@ export function apurarFaturas(bills, agora = new Date()) {
       vencimento,
       pagoEm: b.status === "paid" && pagas.length ? dataSP(pagas[pagas.length - 1]) : null,
       vencida: b.status === "pending" && !!vencimento && vencimento < hoje,
+      ciclo: Number.isInteger(b.period?.cycle) ? b.period.cycle : null,
+      // Fatura cancelada vem com valor zerado na Vindi; o valor da cobrança serve de referência.
+      valorCobrancaCentavos: Math.max(0, ...(b.charges || []).map(c => centavos(c.amount) ?? 0)) || null,
+      atualizadoFonte: b.updated_at || null,
     };
     if (b.status === "pending" && !vencimento) semVencimento++;
     if (b.updated_at && (!atualizadoFonte || b.updated_at > atualizadoFonte)) atualizadoFonte = b.updated_at;
@@ -83,9 +87,21 @@ export function apurarFaturas(bills, agora = new Date()) {
 // • Regularizado → Inadimplente só se o Regularizado tiver sido definido pela própria Vindi.
 // • Status definido manualmente (ou Cancelado/Regularizado sem origem conhecida) nunca muda;
 //   se a Vindi divergir, devolve um aviso de divergência.
-// • Assinatura cancelada NÃO significa dívida quitada: o que vale são as faturas vencidas.
-export function decidirStatus({ status, statusOrigem, apuracao, consultaCompleta }) {
-  if (!consultaCompleta || !apuracao?.confiavel) return { novoStatus: null, divergencia: null };
+// • Assinatura cancelada na Vindi → Cancelado, qualquer que seja o status atual (inclusive manual).
+//   Cancelamento NÃO significa dívida quitada: a situação financeira fica guardada à parte.
+// • Cancelado nunca é trocado por Regularizado/Inadimplente numa sincronização posterior.
+//   assinaturaCancelada: true / false / null (fatura avulsa — sem assinatura para conferir).
+// • A troca automática para Cancelado acontece quando o cancelamento é detectado. Se depois disso
+//   alguém alterar o status manualmente, a escolha manual é respeitada (só fica o aviso).
+export function decidirStatus({ status, statusOrigem, apuracao, consultaCompleta, assinaturaCancelada = null, cancelamentoJaRegistrado = false }) {
+  if (!consultaCompleta) return { novoStatus: null, divergencia: null };
+  if (assinaturaCancelada) {
+    if (status === "Cancelado") return { novoStatus: null, divergencia: null };
+    if (cancelamentoJaRegistrado && statusOrigem === "manual") return { novoStatus: null, divergencia: `A assinatura está cancelada na Vindi, mas o status foi alterado manualmente para ${status}.` };
+    return { novoStatus: "Cancelado", divergencia: null };
+  }
+  if (status === "Cancelado") return { novoStatus: null, divergencia: statusOrigem === "vindi" && assinaturaCancelada === false ? "A assinatura não está mais cancelada na Vindi, mas o status continua Cancelado (altere manualmente se ela foi reativada)." : null };
+  if (!apuracao?.confiavel) return { novoStatus: null, divergencia: null };
   const temVencida = apuracao.vencidas.qtd > 0;
   const protegido = statusOrigem === "manual" || (status !== "Inadimplente" && statusOrigem !== "vindi");
 

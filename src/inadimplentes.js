@@ -194,7 +194,43 @@ export function inadResumoParcelas(reg) {
 // Com dados da Vindi, cada fatura da assinatura corresponde a uma parcela, na ordem de vencimento
 // (conferido em 15/10/2026 nos 84 contratos: nunca há mais faturas que parcelas). A Vindi tem
 // prioridade sobre a planilha. hoje = "AAAA-MM-DD".
+//
+// Com o histórico permanente (vindi.historico, gravado pelo servidor a partir de 20/10/2026):
+//   "pagaAtraso" → paga depois do vencimento original (com diasAtraso)
+//   a parcela é o ciclo da assinatura na Vindi (period.cycle); sem ciclo, a ordem de vencimento.
+//   Faturas canceladas não aparecem — exceto as que estavam vencidas quando a assinatura foi
+//   cancelada (valor que ficou em aberto), que continuam laranja.
+const PRIORIDADE_ENTRADA = { paga: 4, pagaAtraso: 4, pagaSemData: 4, pendente: 3, outro: 2, cancelada: 1 };
+function situacaoPeloHistorico(reg, hoje) {
+  const v = reg.vindi;
+  const abertasNoCancel = new Set(v.cancelamento?.faturas || []);
+  const ents = Object.values(v.historico).filter(e => e.situacao !== "cancelada" || abertasNoCancel.has(e.id));
+  const porN = new Map();
+  if (ents.length && ents.every(e => Number.isInteger(e.ciclo) && e.ciclo > 0)) {
+    for (const e of ents) {
+      const ja = porN.get(e.ciclo);
+      // 2ª via/renegociação no mesmo ciclo: vale a paga; senão a de vencimento mais recente
+      if (!ja || PRIORIDADE_ENTRADA[e.situacao] > PRIORIDADE_ENTRADA[ja.situacao] ||
+          (PRIORIDADE_ENTRADA[e.situacao] === PRIORIDADE_ENTRADA[ja.situacao] && (e.vencimento || "") > (ja.vencimento || ""))) porN.set(e.ciclo, e);
+    }
+  } else {
+    ents.sort((a, b) => (a.vencimento || "9999").localeCompare(b.vencimento || "9999")).forEach((e, i) => porN.set(i + 1, e));
+  }
+  const total = Math.max(reg.numParcelas ?? v.totalParcelasVindi ?? (reg.parcelas || []).length, ...porN.keys(), 0);
+  return Array.from({ length: total }, (_, i) => {
+    const n = i + 1, e = porN.get(n);
+    if (!e) return { n, total, situacao: "naoGerada" };
+    const base = { n, total, faturaId: e.id, vencimento: e.vencimento || null, valorCentavos: e.valorCentavos ?? null };
+    if (e.situacao === "pagaAtraso") return { ...base, situacao: "pagaAtraso", pagoEm: e.pagoEm, diasAtraso: e.diasAtraso };
+    if (e.situacao === "paga" || e.situacao === "pagaSemData") return { ...base, situacao: "paga", pagoEm: e.pagoEm || null, diasAtraso: e.diasAtraso ?? null };
+    if (e.situacao === "cancelada") return { ...base, situacao: "vencida", canceladaNaVindi: true };
+    if (e.status === "pending" && e.vencimento && e.vencimento < hoje) return { ...base, situacao: "vencida" };
+    return { ...base, situacao: "aVencer" };
+  });
+}
+
 export function inadSituacaoParcelas(reg, hoje) {
+  if (reg.vindi?.historico && Object.keys(reg.vindi.historico).length) return situacaoPeloHistorico(reg, hoje);
   const total = reg.numParcelas ?? (reg.parcelas || []).length;
   const faturas = (reg.vindi?.faturas || []).filter(f => f.status !== "canceled")
     .sort((a, b) => (a.vencimento || "9999").localeCompare(b.vencimento || "9999"));
@@ -238,6 +274,14 @@ const CAMPOS_PLANILHA = ["numero", "idFatura", "serie", "nome", "email", "estado
   "parcelasPagasInformadas", "parcelasAReceberInformadas",
   "dataInadimplencia", "dataRenovacao", "novaValidade", "vendedor", "colaboradorPlanilha", "vindiUrl", "statusPlanilha", "planilha"];
 
+// Ao atualizar um registro existente, a importação grava SOMENTE estes campos (update parcial):
+// o histórico da Vindi, observações e compromisso nunca são reescritos pela importação — nem se
+// a Vindi ou um atendente alterarem o registro entre a leitura e a gravação.
+export function inadCamposImportacao(item) {
+  return Object.fromEntries([...CAMPOS_PLANILHA, "status", "statusOrigem", "responsavelId", "importadoEm", "arquivoNome"]
+    .filter(k => item[k] !== undefined).map(k => [k, item[k]]));
+}
+
 const estavel = v => (v === null || typeof v !== "object") ? JSON.stringify(v ?? null)
   : Array.isArray(v) ? `[${v.map(estavel).join(",")}]`
   : `{${Object.keys(v).sort().map(k => `${JSON.stringify(k)}:${estavel(v[k])}`).join(",")}}`;
@@ -254,7 +298,7 @@ export function inadPlanejarImportacao(existentes, lidas, { matchEmployee = () =
     if (e.idFatura) porFatura.set(String(e.idFatura), e);
     if (e.serie)    porSerie.set(String(e.serie), e);
   }
-  const gravar = [], resumo = { incluidos: 0, atualizados: 0, ignorados: 0, erros: [], statusPreservado: 0 };
+  const gravar = [], novosIds = new Set(), resumo = { incluidos: 0, atualizados: 0, ignorados: 0, erros: [], statusPreservado: 0 };
   const vistos = new Set();
 
   for (const { linha, registro: r, erro } of lidas) {
@@ -290,6 +334,7 @@ export function inadPlanejarImportacao(existentes, lidas, { matchEmployee = () =
         prioridade: false, agendamento: null, observacoes: [],
         origem: "importacao", criadoEm: agora, importadoEm: agora, arquivoNome,
       });
+      novosIds.add(gravar[gravar.length - 1].id);
       resumo.incluidos++;
       continue;
     }
@@ -309,5 +354,5 @@ export function inadPlanejarImportacao(existentes, lidas, { matchEmployee = () =
     gravar.push({ ...atual, ...daPlanilha, status, ...(statusOrigem ? { statusOrigem } : {}), responsavelId, importadoEm: agora, arquivoNome });
     resumo.atualizados++;
   }
-  return { gravar, resumo };
+  return { gravar, novosIds, resumo };
 }

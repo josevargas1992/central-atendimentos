@@ -123,13 +123,13 @@ test("status definido manualmente nunca é trocado; divergência é sinalizada",
   assert.match(d.vindi.divergencia, /definido manualmente/);
 });
 
-test("cenário 7: assinatura cancelada com dívida pendente → NÃO é considerada quitada", async () => {
+test("cenário 7: assinatura cancelada com dívida pendente → Cancelado, mas NÃO é considerada quitada", async () => {
   const reg = await criarInad();
   await sinc(reg, vindiFake({ assinaturas: { "5001": { id: 5001, status: "canceled" } }, faturas: [bill(1, "2026-08-10"), bill(2, "2026-09-10", "canceled")] }));
   const d = await ler();
-  assert.equal(d.status, "Inadimplente");
+  assert.equal(d.status, "Cancelado");
   assert.equal(d.vindi.assinaturaStatus, "canceled");
-  assert.equal(d.vindi.vencidasQtd, 1);
+  assert.equal(d.vindi.vencidasQtd, 1, "a dívida vencida continua registrada");
 });
 
 test("cenário 6: falha na API → preserva os dados financeiros anteriores e não regulariza", async () => {

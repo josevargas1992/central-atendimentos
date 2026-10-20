@@ -5,7 +5,7 @@ import { signInWithEmailAndPassword, signOut, onAuthStateChanged, sendPasswordRe
 import * as store from "./data";
 import { consultarLogike, descreverTesteLogike } from "./logike";
 import { satNorm, satParseData, satAgruparPorMes, satDistribuir } from "./satisfacao";
-import { INAD_STATUS, inadLerPlanilha, inadResumoParcelas, inadSituacaoParcelas, inadTempo, inadTempoTexto, inadPlanejarImportacao, inadVindiValido } from "./inadimplentes";
+import { INAD_STATUS, inadLerPlanilha, inadResumoParcelas, inadSituacaoParcelas, inadTempo, inadTempoTexto, inadPlanejarImportacao, inadCamposImportacao, inadVindiValido } from "./inadimplentes";
 import * as XLSX from "xlsx";
 
 // ── Constants ─────────────────────────────────────────────────────────
@@ -482,10 +482,19 @@ function RecordRow({ r, employees, tiposMap, togglePrio, togglePesquisa, updateS
 
 // ──────────────────────────────────────────────────────────────────────
 
-const CHANGELOG_VERSION = "1.6.2";
+const CHANGELOG_VERSION = "1.6.3";
 const CHANGELOG_KEY = `changelog_seen_${CHANGELOG_VERSION}`;
 
 const CHANGELOG = [
+  {
+    version: "1.6.3",
+    date: "Out 2026",
+    entries: [
+      { type: "correcao", text: "Inadimplentes: assinatura cancelada na Vindi agora muda o status para Cancelado automaticamente (antes podia aparecer como Regularizado). O valor que ficou em aberto no cancelamento aparece nos detalhes." },
+      { type: "novo",     text: "Inadimplentes: quadradinho azul = parcela paga em atraso. Passe o mouse para ver o vencimento original, a data do pagamento e os dias de atraso." },
+      { type: "novo",     text: "Inadimplentes: histórico financeiro das parcelas nos detalhes do cliente (no prazo, em atraso, vencidas, não geradas), mantido mesmo depois de Regularizado ou Cancelado." },
+    ],
+  },
   {
     version: "1.6.2",
     date: "Out 2026",
@@ -2948,11 +2957,12 @@ function InadStatusBadge({ status }) {
   return <span style={{ display:"inline-flex", alignItems:"center", gap:5, background:dark?c.darkBg:c.bg, color:dark?c.darkText:c.text, border:`1px solid ${dark?c.darkBorder:"transparent"}`, padding:"3px 10px 3px 7px", borderRadius:20, fontSize:11.5, fontWeight:600, whiteSpace:"nowrap" }}><span style={{ width:6, height:6, borderRadius:"50%", background:c.bar }} />{status}</span>;
 }
 
-// Parcelas como "quadradinhos": verde = paga, laranja = atrasada (vencida e não paga),
+// Parcelas como "quadradinhos": verde = paga, azul = paga em atraso, laranja = atrasada (vencida e não paga),
 // cinza = ainda não gerada (ou gerada mas ainda não vencida). Ver inadSituacaoParcelas.
 const SITUACAO_PARCELA = {
   paga:      { cor:"#22c55e", rotulo: p => `paga${p.pagoEm ? " em " + fmtDataBR(p.pagoEm) : ""}` },
-  vencida:   { cor:"#f97316", rotulo: p => `atrasada (venceu em ${fmtDataBR(p.vencimento)})` },
+  pagaAtraso:{ cor:"#3b82f6", rotulo: p => `paga em atraso · vencimento original ${fmtDataBR(p.vencimento)} · pago em ${fmtDataBR(p.pagoEm)} · ${p.diasAtraso} ${p.diasAtraso === 1 ? "dia" : "dias"} de atraso` },
+  vencida:   { cor:"#f97316", rotulo: p => `atrasada (venceu em ${fmtDataBR(p.vencimento)})${p.canceladaNaVindi ? " — em aberto no cancelamento" : ""}` },
   aVencer:   { cor:"#cbd5e1", rotulo: p => `gerada, ${p.vencimento ? "vence em " + fmtDataBR(p.vencimento) : "ainda não vencida"}` },
   naoGerada: { cor:"#cbd5e1", rotulo: () => "ainda não gerada" },
   naoPaga:   { cor:"#cbd5e1", rotulo: () => "não paga — sincronize com a Vindi para saber se está atrasada" },
@@ -2961,7 +2971,7 @@ const hojeLocal = () => { const d = new Date(); return `${d.getFullYear()}-${Str
 function InadParcelasMini({ reg, size=7 }) {
   return (
     <div style={{ display:"flex", gap:2, flexWrap:"wrap" }}>
-      {inadSituacaoParcelas(reg, hojeLocal()).map(p => { const s = SITUACAO_PARCELA[p.situacao]; return <span key={p.n} title={`Parcela ${p.n}: ${s.rotulo(p)}`} style={{ width:size, height:size, borderRadius:2, background:s.cor }} />; })}
+      {inadSituacaoParcelas(reg, hojeLocal()).map(p => { const s = SITUACAO_PARCELA[p.situacao]; return <span key={p.n} title={`Parcela ${p.n}${p.total ? " de " + p.total : ""}: ${s.rotulo(p)}`} style={{ width:size, height:size, borderRadius:2, background:s.cor }} />; })}
     </div>
   );
 }
@@ -3180,10 +3190,11 @@ function InadVindiSecao({ reg, box, titulo }) {
             {linha("Vencida mais recente", v.vencidaMaisRecente ? `${fmtDataBR(v.vencidaMaisRecente.vencimento)} · ${fmtCentavos(v.vencidaMaisRecente.valorCentavos)}` : "—")}
             {linha("Última fatura paga", v.ultimaPaga ? `${v.ultimaPaga.pagoEm ? fmtDataBR(v.ultimaPaga.pagoEm) : "data não informada"} · ${fmtCentavos(v.ultimaPaga.valorCentavos)}` : "—")}
             {linha("Em aberto, ainda não vencidas", v.abertasNaoVencidas ?? "—")}
-            {linha("Assinatura", v.assinaturaStatus === "canceled" ? "Cancelada (dívida vencida continua valendo)" : v.assinaturaStatus === "active" ? "Ativa" : (v.assinaturaStatus || (v.faturaAvulsaId ? "Fatura avulsa" : "—")), v.assinaturaStatus === "canceled" ? "#b45309" : undefined)}
+            {linha("Assinatura", v.assinaturaStatus === "canceled" ? (v.cancelamento?.data ? `Cancelada em ${fmtDataBR(v.cancelamento.data)}` : "Cancelada (dívida vencida continua valendo)") : v.assinaturaStatus === "active" ? "Ativa" : (v.assinaturaStatus || (v.faturaAvulsaId ? "Fatura avulsa" : "—")), v.assinaturaStatus === "canceled" ? "#b45309" : undefined)}
+            {v.cancelamento && linha("Em aberto no cancelamento", v.cancelamento.valorEmAbertoCentavos == null ? "não foi possível apurar" : v.cancelamento.vencidasQtd ? `${v.cancelamento.vencidasQtd} fatura(s) · ${fmtCentavos(v.cancelamento.valorEmAbertoCentavos)}` : "nada vencido", v.cancelamento.vencidasQtd ? "#dc2626" : undefined)}
           </div>
         </div>
-        {(v.faturas || []).length > 0 && (
+        {v.historico && Object.keys(v.historico).length > 0 ? <InadHistoricoFinanceiro reg={reg} /> : (v.faturas || []).length > 0 && (
           <details style={{ marginTop:10 }}>
             <summary style={{ cursor:"pointer", fontSize:12.5, color:t.textSub, fontWeight:600 }}>Histórico de faturas na Vindi ({v.faturas.length})</summary>
             <div style={{ overflowX:"auto", marginTop:8 }}>
@@ -3204,6 +3215,49 @@ function InadVindiSecao({ reg, box, titulo }) {
         )}
       </>)}
     </div>
+  );
+}
+
+// Histórico financeiro por parcela (vindi.historico): fica disponível mesmo com o cliente
+// Regularizado ou Cancelado. No celular (sem mouse), é aqui que se vê o detalhe de cada quadradinho.
+const SITUACAO_HISTORICO = {
+  paga:       ["Paga no prazo",  "#15803d", "#dcfce7"],
+  pagaAtraso: ["Paga em atraso", "#1d4ed8", "#dbeafe"],
+  vencida:    ["Vencida",        "#b91c1c", "#fee2e2"],
+  aVencer:    ["A vencer",       "#475569", "#f1f5f9"],
+  naoGerada:  ["Não gerada",     "#64748b", "#f8fafc"],
+};
+function InadHistoricoFinanceiro({ reg }) {
+  const { t, dark } = useTheme();
+  const parcelas = inadSituacaoParcelas(reg, hojeLocal());
+  const conta = sit => parcelas.filter(p => p.situacao === sit).length;
+  const resumo = [["no prazo", conta("paga")], ["em atraso", conta("pagaAtraso")], ["vencidas", conta("vencida")], ["a vencer", conta("aVencer")], ["não geradas", conta("naoGerada")]].filter(([, n]) => n);
+  const td = { padding:"6px 8px", borderBottom:`1px solid ${t.border}` };
+  return (
+    <details style={{ marginTop:10 }}>
+      <summary style={{ cursor:"pointer", fontSize:12.5, color:t.textSub, fontWeight:600 }}>
+        Histórico financeiro das parcelas <span style={{ fontWeight:400, color:t.textMuted }}>({resumo.map(([r, n]) => `${n} ${r}`).join(" · ")})</span>
+      </summary>
+      <div style={{ overflowX:"auto", marginTop:8 }}>
+        <table style={{ width:"100%", borderCollapse:"collapse", fontSize:12.5, minWidth:520 }}>
+          <thead><tr>{["Parcela","Vencimento original","Valor","Situação","Pago em","Atraso"].map(h => <th key={h} style={{ textAlign:"left", padding:"6px 8px", color:t.textMuted, fontWeight:600, borderBottom:`1px solid ${t.border}` }}>{h}</th>)}</tr></thead>
+          <tbody>
+            {parcelas.map(p => { const [rot, cor, bg] = SITUACAO_HISTORICO[p.situacao] || [p.situacao, t.textSub, t.btnSecBg]; return (
+              <tr key={p.n}>
+                <td style={{ ...td, color:t.text, whiteSpace:"nowrap" }}>{p.n} de {p.total}</td>
+                <td style={{ ...td, color:t.text }}>{p.vencimento ? fmtDataBR(p.vencimento) : "—"}</td>
+                <td style={{ ...td, color:t.text }}>{p.valorCentavos != null ? fmtCentavos(p.valorCentavos) : "—"}</td>
+                <td style={td}>
+                  <span style={{ padding:"2px 8px", borderRadius:20, fontSize:11, fontWeight:700, color:dark?"#e2e8f0":cor, background:dark?"rgba(255,255,255,0.08)":bg, whiteSpace:"nowrap" }}>{p.situacao === "paga" && p.diasAtraso == null ? "Paga" : rot}</span>
+                  {p.canceladaNaVindi && <span style={{ marginLeft:6, fontSize:11, color:t.textMuted }}>em aberto no cancelamento</span>}
+                </td>
+                <td style={{ ...td, color:t.textMuted }}>{p.pagoEm ? fmtDataBR(p.pagoEm) : p.situacao === "paga" ? "data não informada" : "—"}</td>
+                <td style={{ ...td, color:p.situacao === "pagaAtraso" ? (dark?"#93c5fd":"#1d4ed8") : t.textMuted, fontWeight:p.situacao === "pagaAtraso" ? 600 : 400 }}>{p.situacao === "pagaAtraso" ? `${p.diasAtraso} ${p.diasAtraso === 1 ? "dia" : "dias"}` : "—"}</td>
+              </tr>); })}
+          </tbody>
+        </table>
+      </div>
+    </details>
   );
 }
 
@@ -3671,10 +3725,11 @@ function InadImportacao({ employees }) {
     setFase("salvando");
     try {
       // Recalcula na hora de gravar, com os dados mais recentes do banco.
-      const { gravar, resumo } = inadPlanejarImportacao(await existentes(), lidas, opcoes(new Date().toISOString()));
+      const { gravar, novosIds, resumo } = inadPlanejarImportacao(await existentes(), lidas, opcoes(new Date().toISOString()));
       for (let i = 0; i < gravar.length; i += 400) {
         const batch = writeBatch(db);
-        gravar.slice(i, i + 400).forEach(r => batch.set(doc(db, "inadimplentes", r.id), r));
+        // Novos: documento completo. Existentes: só os campos da planilha (histórico da Vindi intacto).
+        gravar.slice(i, i + 400).forEach(r => novosIds.has(r.id) ? batch.set(doc(db, "inadimplentes", r.id), r) : batch.update(doc(db, "inadimplentes", r.id), inadCamposImportacao(r)));
         await batch.commit();
       }
       setResultado(resumo); setFase("concluido");

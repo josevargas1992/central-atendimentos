@@ -491,6 +491,7 @@ const CHANGELOG = [
     date: "Out 2026",
     entries: [
       { type: "correcao", text: "Inadimplentes: assinatura cancelada na Vindi agora muda o status para Cancelado automaticamente (antes podia aparecer como Regularizado). O valor que ficou em aberto no cancelamento aparece nos detalhes." },
+      { type: "melhoria", text: "Inadimplentes: novas cores de status — Inadimplente em laranja e Cancelado em vermelho." },
       { type: "novo",     text: "Inadimplentes: todo dia de madrugada o app confere todos os clientes na Vindi automaticamente — inclusive os recém-importados da planilha e faturas que venceram sem pagamento." },
       { type: "novo",     text: "Inadimplentes: quadradinho azul = parcela paga em atraso. Passe o mouse para ver o vencimento original, a data do pagamento e os dias de atraso." },
       { type: "correcao", text: "Inadimplentes: fatura com vencimento prorrogado na Vindi continua contando como vencida desde o vencimento original — prorrogar não regulariza o cliente." },
@@ -2946,8 +2947,8 @@ function SatisfacaoView({ user, onBack }) {
 // ── Controle de Inadimplentes ────────────────────────────────────────
 
 const INAD_STATUS_CFG = {
-  "Inadimplente": { bar:"#ef4444", bg:"#fee2e2", text:"#b91c1c", darkBg:"rgba(239,68,68,0.14)",   darkText:"#f87171", darkBorder:"rgba(239,68,68,0.25)" },
-  "Cancelado":    { bar:"#94a3b8", bg:"#f1f5f9", text:"#475569", darkBg:"rgba(148,163,184,0.12)", darkText:"#cbd5e1", darkBorder:"rgba(148,163,184,0.25)" },
+  "Inadimplente": { bar:"#f97316", bg:"#ffedd5", text:"#c2410c", darkBg:"rgba(249,115,22,0.14)",  darkText:"#fb923c", darkBorder:"rgba(249,115,22,0.25)" },
+  "Cancelado":    { bar:"#ef4444", bg:"#fee2e2", text:"#b91c1c", darkBg:"rgba(239,68,68,0.14)",   darkText:"#f87171", darkBorder:"rgba(239,68,68,0.25)" },
   "Regularizado": { bar:"#22c55e", bg:"#dcfce7", text:"#15803d", darkBg:"rgba(34,197,94,0.12)",   darkText:"#4ade80", darkBorder:"rgba(34,197,94,0.22)" },
 };
 const fmtDataBR = iso => iso ? iso.slice(0, 10).split("-").reverse().join("/") : "—";
@@ -3608,10 +3609,10 @@ function InadimplentesPanel({ user, isAdmin, employees: empsProp }) {
   const ativos = regs.filter(r => r.status === "Inadimplente");
   const stats = [
     ["Total",            regs.length,                                                       t.text],
-    ["Inadimplentes",    ativos.length,                                                     "#dc2626"],
+    ["Inadimplentes",    ativos.length,                                                     "#ea580c"],
     ["Há mais de 1 mês", ativos.filter(r => inadTempo(r.dataInadimplencia, hoje)?.maisDeUmMes).length, "#d97706"],
     ["Regularizados",    regs.filter(r => r.status === "Regularizado").length,              "#16a34a"],
-    ["Cancelados",       regs.filter(r => r.status === "Cancelado").length,                 t.textMuted],
+    ["Cancelados",       regs.filter(r => r.status === "Cancelado").length,                 "#dc2626"],
     ["Em aberto",        gcFmtBRL(ativos.reduce((s, r) => s + (r.valorAReceber||0), 0)) || "R$ 0,00", "#dc2626"],
   ];
   const selSt = { padding:"8px 12px", border:`1.5px solid ${t.inputBorder}`, borderRadius:8, fontSize:13, color:t.inputText, background:t.inputBg, cursor:"pointer", ...FF };

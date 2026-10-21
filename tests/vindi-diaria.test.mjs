@@ -79,11 +79,11 @@ test("fatura que venceu sem pagamento (sem webhook) → volta a Inadimplente", a
   assert.equal((await ler("inad-1")).status, "Inadimplente");
 });
 
-test("fila: pula quem foi tentado nas últimas 18 h, cancelamento já registrado e registro sem ID; mais antigo primeiro", () => {
+test("fila: pula quem já foi tentado hoje (dia de Brasília), cancelamento já registrado e registro sem ID; mais antigo primeiro", () => {
   const agora = Date.parse("2026-10-21T06:00:00Z");
   const regs = [
-    { id: "recente", idFatura: "1", vindi: { assinaturaId: "1", ultimaTentativa: "2026-10-21T01:00:00Z" } },
-    { id: "ontem", idFatura: "2", vindi: { assinaturaId: "2", ultimaTentativa: "2026-10-20T10:00:00Z" } },
+    { id: "recente", idFatura: "1", vindi: { assinaturaId: "1", ultimaTentativa: "2026-10-21T05:00:00Z" } },   // 02h de hoje
+    { id: "ontem", idFatura: "2", vindi: { assinaturaId: "2", ultimaTentativa: "2026-10-21T01:00:00Z" } },     // 22h de ontem
     { id: "nunca", idFatura: "3" },
     { id: "cancelado", status: "Cancelado", idFatura: "4", vindi: { assinaturaId: "4", cancelamento: { em: "x" }, ultimaTentativa: "2026-10-01T00:00:00Z" } },
     { id: "semId", nome: "x" },
@@ -95,7 +95,7 @@ test("fila: pula quem foi tentado nas últimas 18 h, cancelamento já registrado
 test("tempo esgotado: processa o que dá e dispara a próxima rodada com o mesmo segredo", async () => {
   for (const n of [1, 2, 3]) await criar(`inad-${n}`, { idFatura: String(700 + n) });
   const faturas = [1, 2, 3].map(n => billC(n, 700 + n, 1, "2026-09-10", "paid", "2026-09-10"));
-  let t = 0;
+  let t = Date.now();
   const { h, disparos } = handler(vindiFake({ faturas }), { orcamentoMs: 1, relogio: () => (t += 1) });
   const r = await chamar(h);
   assert.equal(r.body.processados, 1);
@@ -110,7 +110,7 @@ test("tempo esgotado: processa o que dá e dispara a próxima rodada com o mesmo
 
 test("limite de rodadas: na última rodada não dispara outra", async () => {
   for (const n of [1, 2]) await criar(`inad-${n}`, { idFatura: String(700 + n) });
-  let t = 0;
+  let t = Date.now();
   const { h, disparos } = handler(vindiFake({ faturas: [1, 2].map(n => billC(n, 700 + n, 1, "2026-09-10", "paid", "2026-09-10")) }), { orcamentoMs: 1, relogio: () => (t += 1) });
   const r = await chamar(h, { url: `/api/vindi/diaria?rodada=${MAX_RODADAS}` });
   assert.equal(r.body.restantes, 1);

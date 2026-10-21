@@ -4,14 +4,14 @@
 //
 // • Autenticação: a Vercel envia "Authorization: Bearer <CRON_SECRET>" (variável de ambiente).
 // • O plano gratuito limita a duração de cada função: cada rodada sincroniza por ~40 s e, se faltar
-//   gente, dispara a rodada seguinte (no máximo MAX_RODADAS). Quem já foi tentado nas últimas 18 h
-//   fica de fora — assim nenhuma rodada repete cliente e o laço sempre termina.
+//   gente, dispara a rodada seguinte (no máximo MAX_RODADAS). Quem já foi tentado HOJE (dia de
+//   Brasília) fica de fora — assim nenhuma rodada repete cliente e o laço sempre termina.
 // • As mesmas regras do botão "Atualizar pela Vindi" (sincronizarRegistro), com origem "diaria".
 import { timingSafeEqual } from "node:crypto";
 import { sincronizarRegistro, COL_INAD, faturaDoLink } from "./processar.js";
+import { dataSP } from "./apuracao.js";
 
 export const MAX_RODADAS = 15;
-const RECENTE_MS = 18 * 60 * 60 * 1000;
 
 const responder = (res, status, corpo) => { res.status(status).setHeader("Cache-Control", "no-store"); return res.json(corpo); };
 const iguais = (a, b) => { const x = Buffer.from(String(a)), y = Buffer.from(String(b)); return x.length === y.length && timingSafeEqual(x, y); };
@@ -27,7 +27,7 @@ export function candidatos(registros, agoraMs) {
   return registros
     .filter(r => r.vindi?.assinaturaId || r.vindi?.faturaAvulsaId || r.idFatura || faturaDoLink(r.vindiUrl))
     .filter(r => !(r.status === "Cancelado" && r.vindi?.cancelamento))
-    .filter(r => { const t = Date.parse(r.vindi?.ultimaTentativa || ""); return !(t && agoraMs - t < RECENTE_MS); })
+    .filter(r => { const hoje = dataSP(new Date(agoraMs).toISOString()); return !(r.vindi?.ultimaTentativa && dataSP(r.vindi.ultimaTentativa) === hoje); })
     .sort((a, b) => (a.vindi?.ultimaTentativa || "").localeCompare(b.vindi?.ultimaTentativa || ""));
 }
 

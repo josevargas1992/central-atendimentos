@@ -5,7 +5,7 @@ import assert from "node:assert/strict";
 import { getDb } from "../server/firebaseAdmin.js";
 import { sincronizarRegistro, COL_INAD, COL_SINC, COL_EVENTOS } from "../server/vindi/processar.js";
 import { criarHandlerWebhook } from "../server/vindi/webhook.js";
-import { classificarPagamento, limiteSemAtraso, mesclarHistorico, apurarCancelamento, entradaHistorico } from "../server/vindi/historico.js";
+import { classificarPagamento, limiteSemAtraso, mesclarHistorico, apurarCancelamento, entradaHistorico, vencimentoDoBoleto } from "../server/vindi/historico.js";
 import { inadPlanejarImportacao, inadCamposImportacao, inadSituacaoParcelas } from "../src/inadimplentes.js";
 
 const AGORA = new Date("2026-10-14T15:00:00-03:00");
@@ -213,6 +213,48 @@ test("prorrogação antiga por reemissão (caso Gisele): o vencimento da cobran�
   assert.equal(h.vencimentoVindi, "2026-10-15");
   assert.equal(h.situacao, "pagaAtraso");
   assert.equal(h.diasAtraso, 2);
+});
+
+// Linha digitável de 47 dígitos com o fator de vencimento da data informada (ciclo iniciado em 22/02/2025).
+const linhaPara = venc => "0".repeat(33) + String(1000 + Math.round((Date.parse(venc) - Date.parse("2025-02-22")) / 864e5)) + "0000008540";
+
+test("linha digitável: vencimento decodificado (boleto real do painel da Vindi)", () => {
+  assert.equal(vencimentoDoBoleto("34191090817981305293785334580009216000000008540"), "2026-10-15");
+  assert.equal(vencimentoDoBoleto(linhaPara("2026-10-13")), "2026-10-13");
+  assert.equal(vencimentoDoBoleto("123"), null);
+});
+
+test("caso real da Gisele: boleto reemitido — vencimento original vem do 1º boleto; conferido uma vez só", async () => {
+  // Cobrança criada em 05/10 (boleto vencendo 13/10); em 15/10 cancelado e reemitido para 15/10; pago por PIX em 15/10.
+  const b = billC(1, 10, "2026-10-15", "paid", null, "2026-10-15T16:22:00-03:00");
+  b.charges = [{ id: 7, status: "paid", due_at: "2026-10-15T00:00:00.000-03:00", paid_at: "2026-10-15T00:00:00.000-03:00", created_at: "2026-10-05T06:56:00.000-03:00",
+    last_transaction: { id: 903, created_at: "2026-10-15T16:15:16.000-03:00" } }];
+  const transacoes = [
+    { id: 901, transaction_type: "charge", status: "canceled", gateway_response_fields: { typeable_barcode: linhaPara("2026-10-13") } },
+    { id: 902, transaction_type: "void", status: "success", gateway_response_fields: {} },
+    { id: 903, transaction_type: "charge", status: "success", gateway_response_fields: { typeable_barcode: linhaPara("2026-10-15"), payment_date: "2026-10-15" } },
+  ];
+  const consultas = [];
+  const v = { ...vindiFake({ assinaturas: SUB12, faturas: [b] }), async transacoesDaCobranca(id) { consultas.push(id); return transacoes; } };
+  await sinc(await criarInad(), v);
+  let h = (await ler()).vindi.historico["1"];
+  assert.equal(h.vencimento, "2026-10-13");
+  assert.equal(h.vencimentoVindi, "2026-10-15");
+  assert.equal(h.situacao, "pagaAtraso");
+  assert.equal(h.diasAtraso, 2);
+  assert.equal(h.transacaoConferida, "903");
+  await sinc(await atual(), v);
+  assert.equal(consultas.length, 1, "a mesma transação não é consultada de novo");
+  assert.equal((await ler()).vindi.historico["1"].vencimento, "2026-10-13");
+});
+
+test("boleto sem reemissão: não consulta transações", async () => {
+  const b = billC(1, 4, "2026-08-17", "paid", "2026-08-18");
+  b.charges = [{ id: 7, status: "paid", paid_at: "2026-08-18T00:00:00.000-03:00", created_at: "2026-08-07T05:14:46.000-03:00", last_transaction: { id: 1, created_at: "2026-08-07T05:14:46.000-03:00" } }];
+  const consultas = [];
+  await sinc(await criarInad(), { ...vindiFake({ assinaturas: SUB12, faturas: [b] }), async transacoesDaCobranca(id) { consultas.push(id); return []; } });
+  assert.equal(consultas.length, 0);
+  assert.equal((await ler()).vindi.historico["1"].diasAtraso, 1, "pago 1 dia depois (data real do pagamento)");
 });
 
 test("prorrogação em registro ainda sem histórico: usa o vencimento da última sincronização", async () => {

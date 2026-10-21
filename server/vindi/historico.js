@@ -12,9 +12,21 @@
 // próximo dia útil sem atraso (regra bancária). Os dias de atraso contam do vencimento original.
 // Sem as duas datas, a parcela NÃO é classificada (nada é inventado).
 
-// Tolerância extra em dias úteis após o vencimento. 0 = regra rígida. Pode virar 1 se ficar
-// confirmado que o paid_at do boleto é a data de confirmação do banco (conferência pendente).
+// Tolerância extra em dias úteis após o vencimento. 0 = regra rígida.
+// Conferido em 20/10/2026 nos dados reais: o paid_at da Vindi é igual à data de pagamento informada
+// pelo banco (payment_date; no PIX, até a hora) — não é data de compensação. Por isso fica 0.
 export const TOLERANCIA_DIAS_UTEIS = 0;
+
+// Vencimento codificado na linha digitável do boleto (fator de vencimento FEBRABAN: base 07/10/1997,
+// reiniciado em 1000 no dia 22/02/2025). Conferido no boleto real: fator 1600 → 15/10/2026.
+export function vencimentoDoBoleto(linha) {
+  const n = String(linha || "").replace(/\D/g, "");
+  const f = n.length === 47 ? +n.slice(33, 37) : n.length === 44 ? +n.slice(5, 9) : NaN;
+  if (!f || f < 1000) return null;
+  const novo = somarDias("2025-02-22", f - 1000), antigo = somarDias("1997-10-07", f);
+  return novo < "2035-01-01" ? novo : antigo;
+}
+export const linhaDigitavel = campos => Object.values(campos || {}).find(v => typeof v === "string" && /^\d{44}$|^\d{47}$/.test(v.replace(/[\s.]/g, ""))) || null;
 
 const somarDias = (iso, n) => {
   const [y, m, d] = iso.split("-").map(Number);
@@ -84,6 +96,7 @@ export function entradaHistorico(f) {
   return {
     id: String(f.id), ciclo: f.ciclo ?? null, vencimento: f.vencimento || null, vencimentoVindi: f.vencimentoVindi || f.vencimento || null, valorCentavos: f.valorCentavos ?? null,
     status: f.status || null, situacao, pagoEm: f.pagoEm || null, diasAtraso, atualizadoFonte: f.atualizadoFonte || null,
+    ...(f.transacaoConferida ? { transacaoConferida: f.transacaoConferida } : {}),
   };
 }
 
@@ -106,6 +119,7 @@ export function mesclarHistorico(anterior, faturas, agoraISO) {
     const pagaAntes = ant && (ant.situacao === "paga" || ant.situacao === "pagaAtraso" || ant.situacao === "pagaSemData");
     const pagaAgora = nova.situacao === "paga" || nova.situacao === "pagaAtraso" || nova.situacao === "pagaSemData";
     // A Vindi zera o valor da fatura cancelada: guarda o valor conhecido de antes (ou o da cobrança).
+    if (!nova.transacaoConferida && ant?.transacaoConferida) nova.transacaoConferida = ant.transacaoConferida;
     if (nova.situacao === "cancelada" && !(nova.valorCentavos > 0)) {
       const conhecido = ant?.valorCentavos > 0 ? ant.valorCentavos : f.valorCobrancaCentavos > 0 ? f.valorCobrancaCentavos : null;
       nova.valorCentavos = conhecido;

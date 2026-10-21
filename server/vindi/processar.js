@@ -4,7 +4,7 @@
 import { createHash } from "node:crypto";
 import { FieldValue } from "firebase-admin/firestore";
 import { apurarFaturas, decidirStatus } from "./apuracao.js";
-import { mesclarHistorico, apurarCancelamento } from "./historico.js";
+import { mesclarHistorico, apurarCancelamento, vencimentoDoBoleto, linhaDigitavel } from "./historico.js";
 import { ErroVindi } from "./cliente.js";
 
 export const COL_INAD   = "inadimplentes";
@@ -59,6 +59,29 @@ const resumoFaturas = faturas => faturas
   .slice(0, MAX_FATURAS_GUARDADAS)
   .map(f => ({ id: String(f.id), status: f.status, valorCentavos: f.valorCentavos, vencimento: f.vencimento, vencimentoVindi: f.vencimentoVindi || null, pagoEm: f.pagoEm, vencida: f.vencida }));
 
+// Prorrogação por reemissão do boleto: a Vindi cancela a transação antiga e emite outra na MESMA
+// cobrança, e o due_at da fatura passa a ser o novo. O vencimento original fica no 1º boleto emitido
+// (linha digitável das transações). Só consulta cobranças cuja última transação é bem posterior à
+// criação (houve reemissão) e só uma vez por transação (fica em historico.<fatura>.transacaoConferida).
+// Devolve { idFatura: { vencimento, transacao } }.
+export async function vencimentosDosBoletos(cliente, bills, historicoAnt = {}) {
+  const res = {};
+  if (typeof cliente.transacoesDaCobranca !== "function") return res;
+  for (const b of bills || []) {
+    for (const c of b.charges || []) {
+      const lt = c.last_transaction;
+      if (!lt?.id || !lt.created_at || !c.created_at) continue;
+      if (Date.parse(lt.created_at) - Date.parse(c.created_at) < 60 * 60 * 1000) continue; // sem reemissão
+      if (historicoAnt[String(b.id)]?.transacaoConferida === String(lt.id)) continue;      // já conferida
+      const datas = (await cliente.transacoesDaCobranca(c.id))
+        .map(t => vencimentoDoBoleto(linhaDigitavel(t.gateway_response_fields))).filter(Boolean).sort();
+      const atual = res[String(b.id)];
+      res[String(b.id)] = { vencimento: [atual?.vencimento, datas[0]].filter(Boolean).sort()[0] || null, transacao: String(lt.id) };
+    }
+  }
+  return res;
+}
+
 // Sincroniza um registro. Nunca lança erro: devolve { resultado, ... } e grava o histórico.
 // ambiente "sandbox" → apenas registra no histórico (marcado como teste), nunca altera o inadimplente.
 export async function sincronizarRegistro({ db, cliente, registro, origem, evento = null, ambiente, agora = new Date() }) {
@@ -84,6 +107,7 @@ export async function sincronizarRegistro({ db, cliente, registro, origem, event
       return { resultado: "sem_identificador", mensagem: msg };
     }
     const bills = r.assinatura ? await cliente.faturasDaAssinatura(r.assinatura.id) : [r.faturaAvulsa];
+    const boletos = await vencimentosDosBoletos(cliente, bills, registro.vindi?.historico);
     // true/false conforme a assinatura; null para fatura avulsa (não há assinatura para conferir)
     const assinaturaCancelada = r.assinatura ? r.assinatura.status === "canceled" : null;
 
@@ -94,7 +118,9 @@ export async function sincronizarRegistro({ db, cliente, registro, origem, event
       const originais = {};
       for (const f of [...(vAnt.faturas || []), ...Object.values(vAnt.historico || {})])
         if (f?.id != null && f.vencimento && (!originais[String(f.id)] || f.vencimento < originais[String(f.id)])) originais[String(f.id)] = f.vencimento;
+      for (const [id, x] of Object.entries(boletos)) if (x.vencimento && (!originais[id] || x.vencimento < originais[id])) originais[id] = x.vencimento;
       const ap = apurarFaturas(bills, agora, originais);
+      for (const f of ap.faturas) if (boletos[String(f.id)]) f.transacaoConferida = boletos[String(f.id)].transacao;
       // Proteção contra dados antigos: se a Vindi devolver algo mais velho do que já gravado, não aplica.
       if (vAnt.atualizadoFonte && ap.atualizadoFonte && ap.atualizadoFonte < vAnt.atualizadoFonte) return { antigo: true };
       // Histórico permanente por fatura: só acrescenta/atualiza, nunca apaga.

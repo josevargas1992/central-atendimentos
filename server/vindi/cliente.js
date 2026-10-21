@@ -113,6 +113,15 @@ export function criarClienteVindi({ apiKey, baseUrl, fetchImpl = globalThis.fetc
       const vistos = new Set();
       return todas.filter(b => b && b.id !== undefined && !vistos.has(b.id) && vistos.add(b.id));
     },
+    // GET /v1/transactions?query=charge_id=ID — histórico de transações de uma cobrança (boletos emitidos, cancelamentos, pagamento).
+    async transacoesDaCobranca(chargeId) {
+      if (!idValido(chargeId)) return [];
+      const r = await requisitar(montar("/transactions", { query: `charge_id=${String(chargeId).trim()}`, per_page: 50, sort_by: "created_at", sort_order: "asc" }));
+      if (r.naoEncontrado) return [];
+      const itens = lista(r.corpo, "transactions");
+      if (!itens) throw new ErroVindi("resposta_invalida", MENSAGENS.resposta_invalida);
+      return itens;
+    },
     // Teste de conexão: consulta leve que só confirma autenticação.
     async testarConexao() {
       const r = await requisitar(montar("/bills", { per_page: 1 }));

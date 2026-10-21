@@ -34,7 +34,7 @@ export function criarHandlerDiag({ lerConfig, criarCliente, lerSegredo = () => p
             const linha = Object.values(campos).find(v => typeof v === "string" && /^\d{44}$|^\d{47}$/.test(v.replace(/[\s.]/g, "")));
             return { id: t.id, tipo: t.transaction_type, status: t.status, created_at: t.created_at, mensagem: t.gateway_message,
               boleto: linha ? vencimentoDoBoleto(linha) : null,
-              PAYMENT_DATE: campos.PAYMENT_DATE || null, DATE_PAYMENT: campos.DATE_PAYMENT || null,
+              payment_date: campos.payment_date ?? campos.PAYMENT_DATE ?? null, date_payment: campos.date_payment ?? campos.DATE_PAYMENT ?? null, date_approval: campos.date_approval ?? null, payment_origin: campos.payment_origin ?? null,
               nomesDosCampos: Object.keys(campos) };
           }),
         });

@@ -172,7 +172,25 @@ export function inadLerPlanilha(matriz) {
 
 // ── Cálculos das parcelas e do tempo de inadimplência ──────────────────
 
-export function inadResumoParcelas(reg) {
+// Data de hoje no fuso local ("AAAA-MM-DD").
+export const inadHoje = (d = new Date()) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+
+// Resumo das parcelas (pagas / pendentes / última paga). Com histórico da Vindi, a Vindi é a fonte
+// (é o que os quadradinhos mostram); sem ele, vale o que veio da planilha.
+export function inadResumoParcelas(reg, hoje = inadHoje()) {
+  if (reg.vindi?.historico && Object.keys(reg.vindi.historico).length) {
+    const sit = inadSituacaoParcelas(reg, hoje);
+    const pago = p => p.situacao === "paga" || p.situacao === "pagaAtraso";
+    const ultimaPaga = sit.reduce((m, p) => (pago(p) && p.n > m ? p.n : m), 0) || null;
+    return {
+      total: sit.length,
+      pagas: sit.filter(pago).length,
+      naoPagas: sit.filter(p => !pago(p)).length,
+      ultimaPaga,
+      comLacuna: sit.some(p => p.situacao === "vencida" && ultimaPaga && p.n < ultimaPaga),
+      fonte: "vindi",
+    };
+  }
   const ps = reg.parcelas || [];
   const pagas = ps.filter(p => p.paga).length;
   const ultimaPaga = ps.reduce((m, p) => (p.paga && p.n > m ? p.n : m), 0) || null;

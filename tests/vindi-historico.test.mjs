@@ -494,3 +494,10 @@ test("importação da planilha não troca Quitado; 'Quitado' na planilha é reco
   assert.equal(inadStatusPlanilha("Quitado"), "Quitado");
   assert.equal(inadStatusPlanilha("Regularizado"), "Regularizado");
 });
+
+test("resumo das parcelas (lista e detalhes) segue a Vindi quando há histórico — caso Ana Selma", async () => {
+  await sinc(await criarInad({ numParcelas: 10, parcelas: [1, 2, 3, 4, 5, 6, 7, 8, 9, 10].map(n => ({ n, paga: n <= 7 })) }), vindiFake({ assinaturas: ANA, faturas: faturasAna() }));
+  const { inadResumoParcelas } = await import("../src/inadimplentes.js");
+  const s = inadResumoParcelas(await ler(), "2026-10-26");
+  assert.deepEqual(s, { total: 10, pagas: 10, naoPagas: 0, ultimaPaga: 10, comLacuna: false, fonte: "vindi" }, "a planilha dizia 7/10");
+});

@@ -493,6 +493,7 @@ const CHANGELOG = [
     entries: [
       { type: "novo", text: "Inadimplentes: novo status Quitado — quando todas as parcelas do contrato estão pagas na Vindi (inclusive quando o cliente antecipa as últimas), o status muda sozinho para Quitado." },
       { type: "novo", text: "O app agora se atualiza sozinho quando sai uma versão nova: se você estiver editando algo, aparece um aviso no topo para atualizar quando terminar; e você volta para a mesma tela, sem precisar entrar de novo." },
+      { type: "melhoria", text: "Inadimplentes: os cartões de parcelas nos detalhes do cliente e o resumo \"pendentes · pagas\" da lista agora seguem a Vindi (antes mostravam o que veio da planilha)." },
       { type: "novo", text: "Inadimplentes: parcelas pagas antecipadamente aparecem como \"Paga antecipada\" no histórico financeiro e na dica do quadradinho." },
     ],
   },
@@ -3232,6 +3233,36 @@ function InadVindiSecao({ reg, box, titulo }) {
   );
 }
 
+// Cartões das parcelas nos detalhes, com a situação real da Vindi (mesma fonte dos quadradinhos).
+const CARTAO_PARCELA = {
+  paga:       { rotulo: "Paga",           cor:"#15803d", corEscuro:"#4ade80", borda:"#bbf7d0", fundo:"#f0fdf4", fundoEscuro:"rgba(34,197,94,0.1)",  bordaEscuro:"rgba(34,197,94,0.3)" },
+  pagaAtraso: { rotulo: "Paga em atraso", cor:"#1d4ed8", corEscuro:"#93c5fd", borda:"#bfdbfe", fundo:"#eff6ff", fundoEscuro:"rgba(59,130,246,0.12)", bordaEscuro:"rgba(59,130,246,0.35)" },
+  vencida:    { rotulo: "Vencida",        cor:"#c2410c", corEscuro:"#fb923c", borda:"#fed7aa", fundo:"#fff7ed", fundoEscuro:"rgba(249,115,22,0.12)", bordaEscuro:"rgba(249,115,22,0.35)" },
+  aVencer:    { rotulo: "A vencer" },
+  naoGerada:  { rotulo: "Não gerada" },
+};
+function InadParcelasVindi({ reg }) {
+  const { t, dark } = useTheme();
+  const parcelas = inadSituacaoParcelas(reg, hojeLocal());
+  const detalhe = p => p.situacao === "paga" ? (p.pagoEm ? `${p.antecipada ? "antecipada · " : ""}${fmtDataBR(p.pagoEm)}` : "sem data")
+    : p.situacao === "pagaAtraso" ? `${fmtDataBR(p.pagoEm)} · ${p.diasAtraso} ${p.diasAtraso === 1 ? "dia" : "dias"}`
+    : p.situacao === "vencida" ? `venceu ${fmtDataBR(p.vencimento)}`
+    : p.situacao === "aVencer" && p.vencimento ? `vence ${fmtDataBR(p.vencimento)}` : "";
+  return (<>
+    <div style={{ display:"grid", gridTemplateColumns:"repeat(auto-fill, minmax(104px, 1fr))", gap:8 }}>
+      {parcelas.map(p => { const c = CARTAO_PARCELA[p.situacao] || CARTAO_PARCELA.naoGerada; return (
+        <div key={p.n} title={`Parcela ${p.n} de ${p.total}: ${(SITUACAO_PARCELA[p.situacao] || SITUACAO_PARCELA.naoGerada).rotulo(p)}`}
+          style={{ borderRadius:10, padding:"8px 10px", border:`1px solid ${c.borda ? (dark ? c.bordaEscuro : c.borda) : t.border}`, background:c.fundo ? (dark ? c.fundoEscuro : c.fundo) : t.card }}>
+          <div style={{ fontSize:11, color:t.textMuted, fontWeight:600 }}>Parcela {p.n}</div>
+          <div style={{ fontSize:12.5, fontWeight:700, color:c.cor ? (dark ? c.corEscuro : c.cor) : t.textSub }}>{c.rotulo}</div>
+          {detalhe(p) && <div style={{ fontSize:10.5, color:t.textMuted }}>{detalhe(p)}</div>}
+          {p.prorrogadaPara && (p.situacao === "vencida" || p.situacao === "aVencer") && <div style={{ fontSize:10, color:t.textMuted }}>prorrogada p/ {fmtDataBR(p.prorrogadaPara)}</div>}
+        </div>); })}
+    </div>
+    <div style={{ marginTop:10, fontSize:11.5, color:t.textMuted }}>Situação conforme a Vindi{reg.vindi?.ultimaSincronizacao ? ` (atualizada em ${fmtDataHora(reg.vindi.ultimaSincronizacao)})` : ""}. Datas: pagamento informado pelo banco; atraso contado do vencimento original.</div>
+  </>);
+}
+
 // Histórico financeiro por parcela (vindi.historico): fica disponível mesmo com o cliente
 // Regularizado ou Cancelado. No celular (sem mouse), é aqui que se vê o detalhe de cada quadradinho.
 const SITUACAO_HISTORICO = {
@@ -3492,6 +3523,7 @@ function InadDetalheModal({ reg, employees, perms, user, onClose, onStatus, onIm
 
       <div style={{ ...box, marginBottom:14 }}>
         {titulo("Parcelas")}
+        {s.fonte === "vindi" ? <InadParcelasVindi reg={reg} /> : <>
         <div style={{ display:"grid", gridTemplateColumns:"repeat(auto-fill, minmax(92px, 1fr))", gap:8 }}>
           {(reg.parcelas||[]).map(p => (
             <div key={p.n} style={{ borderRadius:10, padding:"8px 10px", border:`1px solid ${p.paga?(dark?"rgba(34,197,94,0.3)":"#bbf7d0"):t.border}`, background:p.paga?(dark?"rgba(34,197,94,0.1)":"#f0fdf4"):t.card }}>
@@ -3503,6 +3535,7 @@ function InadDetalheModal({ reg, employees, perms, user, onClose, onStatus, onIm
         </div>
         {s.comLacuna && <div style={{ marginTop:10, fontSize:12, color:dark?"#fbbf24":"#b45309" }}>⚠️ Há parcela não paga antes da última parcela paga.</div>}
         <div style={{ marginTop:10, fontSize:11.5, color:t.textMuted }}>A planilha não informa datas de vencimento — "não paga" não significa necessariamente vencida. Referência oficial: data de inadimplência.</div>
+        </>}
       </div>
 
       <div style={box}>

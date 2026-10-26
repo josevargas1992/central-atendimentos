@@ -5,6 +5,7 @@ import { signInWithEmailAndPassword, signOut, onAuthStateChanged, sendPasswordRe
 import * as store from "./data";
 import { consultarLogike, descreverTesteLogike } from "./logike";
 import { satNorm, satParseData, satAgruparPorMes, satDistribuir } from "./satisfacao";
+import { VERSAO_APP, INTERVALO_CONFERENCIA_MS, versaoPublicada, seguroRecarregar, guardarRetorno, lerRetorno } from "./atualizacao";
 import { INAD_STATUS, inadLerPlanilha, inadResumoParcelas, inadSituacaoParcelas, inadTempo, inadTempoTexto, inadPlanejarImportacao, inadCamposImportacao, inadVindiValido } from "./inadimplentes";
 import * as XLSX from "xlsx";
 
@@ -491,6 +492,7 @@ const CHANGELOG = [
     date: "Out 2026",
     entries: [
       { type: "novo", text: "Inadimplentes: novo status Quitado — quando todas as parcelas do contrato estão pagas na Vindi (inclusive quando o cliente antecipa as últimas), o status muda sozinho para Quitado." },
+      { type: "novo", text: "O app agora se atualiza sozinho quando sai uma versão nova: se você estiver editando algo, aparece um aviso no topo para atualizar quando terminar; e você volta para a mesma tela, sem precisar entrar de novo." },
       { type: "novo", text: "Inadimplentes: parcelas pagas antecipadamente aparecem como \"Paga antecipada\" no histórico financeiro e na dica do quadradinho." },
     ],
   },
@@ -681,7 +683,7 @@ function ChangelogModal({ onClose, onDismiss }) {
 }
 
 function Overlay({ children, z=1000 }) {
-  return <div style={{ position:"fixed", inset:0, background:"rgba(15,23,42,0.78)", display:"flex", alignItems:"center", justifyContent:"center", zIndex:z, padding:16, ...FF }}>{children}</div>;
+  return <div data-modal="1" style={{ position:"fixed", inset:0, background:"rgba(15,23,42,0.78)", display:"flex", alignItems:"center", justifyContent:"center", zIndex:z, padding:16, ...FF }}>{children}</div>;
 }
 
 function ModalShell({ title, onClose, children, footer, maxWidth=560 }) {
@@ -2917,7 +2919,7 @@ function SatisfacaoView({ user, onBack }) {
       </div>
 
       {detalhe && (
-        <div style={{ position:"fixed", inset:0, background:"rgba(0,0,0,0.5)", zIndex:200, display:"flex", alignItems:"center", justifyContent:"center", padding:16 }}
+        <div data-modal="1" style={{ position:"fixed", inset:0, background:"rgba(0,0,0,0.5)", zIndex:200, display:"flex", alignItems:"center", justifyContent:"center", padding:16 }}
           onClick={e => { if (e.target === e.currentTarget) setDetalhe(null); }}>
           <div style={{ background:t.card, border:`1px solid ${t.border}`, borderRadius:18, padding:28, maxWidth:460, width:"100%", maxHeight:"80vh", overflowY:"auto" }}>
             <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", marginBottom:18 }}>
@@ -6800,11 +6802,19 @@ function PontoDigital({ user, onBack }) {
   );
 }
 
+// Telas que só existem com alguém logado — sem usuário guardado, o retorno vai para o login.
+const TELAS_COM_USUARIO = ["home", "page", "ponto", "inadimplentes", "satisfacao"];
+
 export default function App() {
-  const [view,     setView]     = useState(() => new URLSearchParams(window.location.search).get("relatorio")==="1" ? "public-report" : "login");
-  const [user,     setUser]     = useState(null);
-  const [openPage, setOpenPage] = useState(null);
-  const [openEmps, setOpenEmps] = useState([]);
+  // Depois de uma atualização automática, volta para a mesma tela (ver src/atualizacao.js).
+  const [retorno] = useState(() => {
+    const r = lerRetorno();
+    return r && (!TELAS_COM_USUARIO.includes(r.view) || r.user) ? r : null;
+  });
+  const [view,     setView]     = useState(() => retorno?.view || (new URLSearchParams(window.location.search).get("relatorio")==="1" ? "public-report" : "login"));
+  const [user,     setUser]     = useState(() => retorno?.user || null);
+  const [openPage, setOpenPage] = useState(() => retorno?.openPage || null);
+  const [openEmps, setOpenEmps] = useState(() => retorno?.openEmps || []);
   const [dark,     setDark]     = useState(() => localStorage.getItem("theme") === "dark");
 
   const toggle = () => setDark(d => {
@@ -6886,11 +6896,46 @@ export default function App() {
   const goHome       = () => { setOpenPage(null); setView("home"); };
   const goPonto      = () => setView("ponto");
   // Satisfação pode ser aberta pela tela inicial ou pela planilha; "Voltar" retorna para a origem.
-  const [satFrom, setSatFrom] = useState("home");
+  const [satFrom, setSatFrom] = useState(() => retorno?.satFrom || "home");
   const goSatisfacao = (from = "home") => { setSatFrom(from); setView("satisfacao"); };
   const goPage       = (pg, emps) => { setOpenPage(pg); setOpenEmps(emps||[]); setView("page"); };
   const goGestao     = () => setView("gestao");
   const goInad       = () => setView("inadimplentes");
+
+  // ── Versão nova publicada: atualiza sem tirar ninguém da tela ──
+  const [novaVersao, setNovaVersao] = useState(false);
+  const atividade = useRef({ ultimaAtividade: Date.now(), ultimaDigitacao: 0 });
+  const estadoTela = useRef(null);
+  estadoTela.current = { view, openPage, openEmps, satFrom, user: user ? (({ password, ...u }) => u)(user) : null };
+  const atualizarAgora = () => { guardarRetorno(estadoTela.current); window.location.reload(); };
+  useEffect(() => {
+    if (VERSAO_APP === "dev") return;
+    let ativo = true;
+    const conferir = async () => { const v = await versaoPublicada(); if (ativo && v && v !== VERSAO_APP) setNovaVersao(true); };
+    const mexeu = () => { atividade.current.ultimaAtividade = Date.now(); };
+    const digitou = () => { atividade.current.ultimaDigitacao = Date.now(); mexeu(); };
+    const voltou = () => { if (!document.hidden) conferir(); };
+    const eventos = ["mousemove", "mousedown", "keydown", "touchstart", "wheel"];
+    eventos.forEach(e => window.addEventListener(e, mexeu, { passive: true }));
+    window.addEventListener("input", digitou, true);
+    document.addEventListener("visibilitychange", voltou);
+    conferir();
+    const timer = setInterval(conferir, INTERVALO_CONFERENCIA_MS);
+    return () => {
+      ativo = false; clearInterval(timer);
+      eventos.forEach(e => window.removeEventListener(e, mexeu));
+      window.removeEventListener("input", digitou, true);
+      document.removeEventListener("visibilitychange", voltou);
+    };
+  }, []);
+  useEffect(() => {
+    if (!novaVersao) return;
+    const tentar = () => { if (seguroRecarregar({ documento: document, agora: Date.now(), ...atividade.current })) atualizarAgora(); };
+    tentar();
+    const timer = setInterval(tentar, 20000);
+    document.addEventListener("visibilitychange", tentar);
+    return () => { clearInterval(timer); document.removeEventListener("visibilitychange", tentar); };
+  }, [novaVersao]);
 
   return (
     <ThemeCtx.Provider value={{ t, dark, toggle }}>
@@ -6903,6 +6948,12 @@ export default function App() {
       {view === "ponto"       && user && <PontoDigital user={user} onBack={goHome} />}
       {view === "inadimplentes" && user?.acessoInadimplentes && <InadimplentesScreen user={user} onBack={goHome} />}
       {view === "satisfacao"  && user && <SatisfacaoView user={user} onBack={satFrom === "page" && openPage ? () => setView("page") : goHome} />}
+      {novaVersao && (
+        <div role="status" style={{ position:"fixed", top:12, left:"50%", transform:"translateX(-50%)", zIndex:100000, display:"flex", alignItems:"center", gap:12, flexWrap:"wrap", justifyContent:"center", maxWidth:"calc(100vw - 32px)", background:"#1e293b", color:"#f1f5f9", padding:"9px 10px 9px 16px", borderRadius:12, boxShadow:"0 10px 30px rgba(0,0,0,0.3)", fontSize:13.5, ...FF }}>
+          <span>🔄 Saiu uma versão nova do app. Salve o que estiver editando e atualize.</span>
+          <button onClick={atualizarAgora} style={{ background:"#6366f1", color:"#fff", border:"none", borderRadius:8, padding:"7px 14px", fontWeight:700, fontSize:13, cursor:"pointer", ...FF }}>Atualizar</button>
+        </div>
+      )}
       {isSafeMode && (
         <div style={{ position:"fixed", left:0, right:0, bottom:0, zIndex:99999, background:"repeating-linear-gradient(135deg,#f59e0b 0 14px,#d97706 14px 28px)", color:"#1c1917", textAlign:"center", padding:"6px 12px", fontSize:12.5, fontWeight:800, letterSpacing:0.3, boxShadow:"0 -2px 10px rgba(0,0,0,0.3)", pointerEvents:"none", ...FF }}>
           🧪 MODO SEGURO — banco de TESTE (cópia do backup de {import.meta.env.VITE_SAFE_BACKUP_LABEL || "?"}). Nada aqui afeta os dados reais.

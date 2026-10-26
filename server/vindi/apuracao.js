@@ -57,6 +57,7 @@ export function apurarFaturas(bills, agora = new Date(), originais = {}) {
       pagoEm: b.status === "paid" && pagas.length ? dataSP(pagas[pagas.length - 1]) : null,
       vencida: b.status === "pending" && !!vencimento && vencimento < hoje,
       ciclo: Number.isInteger(b.period?.cycle) ? b.period.cycle : null,
+      inicioPeriodo: dataSP(b.period?.start_at),
       // Fatura cancelada vem com valor zerado na Vindi; o valor da cobrança serve de referência.
       valorCobrancaCentavos: Math.max(0, ...(b.charges || []).map(c => centavos(c.amount) ?? 0)) || null,
       atualizadoFonte: b.updated_at || null,
@@ -102,7 +103,9 @@ export function apurarFaturas(bills, agora = new Date(), originais = {}) {
 //   assinaturaCancelada: true / false / null (fatura avulsa — sem assinatura para conferir).
 // • A troca automática para Cancelado acontece quando o cancelamento é detectado. Se depois disso
 //   alguém alterar o status manualmente, a escolha manual é respeitada (só fica o aviso).
-export function decidirStatus({ status, statusOrigem, apuracao, consultaCompleta, assinaturaCancelada = null, cancelamentoJaRegistrado = false }) {
+// • Quitado: todas as parcelas do contrato pagas (quitado = true, apurado pelo histórico). Segue as
+//   mesmas proteções de Regularizado (status manual não muda; só avisa).
+export function decidirStatus({ status, statusOrigem, apuracao, consultaCompleta, assinaturaCancelada = null, cancelamentoJaRegistrado = false, quitado = false }) {
   if (!consultaCompleta) return { novoStatus: null, divergencia: null };
   if (assinaturaCancelada) {
     if (status === "Cancelado") return { novoStatus: null, divergencia: null };
@@ -112,14 +115,16 @@ export function decidirStatus({ status, statusOrigem, apuracao, consultaCompleta
   if (status === "Cancelado") return { novoStatus: null, divergencia: statusOrigem === "vindi" && assinaturaCancelada === false ? "A assinatura não está mais cancelada na Vindi, mas o status continua Cancelado (altere manualmente se ela foi reativada)." : null };
   if (!apuracao?.confiavel) return { novoStatus: null, divergencia: null };
   const temVencida = apuracao.vencidas.qtd > 0;
+  const emDia = status === "Regularizado" || status === "Quitado";
   const protegido = statusOrigem === "manual" || (status !== "Inadimplente" && statusOrigem !== "vindi");
 
   if (protegido) {
-    if (status === "Regularizado" && temVencida) return { novoStatus: null, divergencia: `A Vindi indica ${apuracao.vencidas.qtd} fatura(s) vencida(s), mas o status foi definido manualmente como Regularizado.` };
+    if (emDia && temVencida) return { novoStatus: null, divergencia: `A Vindi indica ${apuracao.vencidas.qtd} fatura(s) vencida(s), mas o status foi definido manualmente como ${status}.` };
     if (status === "Inadimplente" && !temVencida) return { novoStatus: null, divergencia: "A Vindi não indica faturas vencidas, mas o status foi definido manualmente como Inadimplente." };
     return { novoStatus: null, divergencia: null };
   }
-  if (status === "Inadimplente" && !temVencida) return { novoStatus: "Regularizado", divergencia: null };
-  if (status === "Regularizado" && statusOrigem === "vindi" && temVencida) return { novoStatus: "Inadimplente", divergencia: null };
+  const alvo = temVencida ? "Inadimplente" : quitado ? "Quitado" : "Regularizado";
+  if (status === "Inadimplente" && !temVencida) return { novoStatus: alvo, divergencia: null };
+  if (emDia && statusOrigem === "vindi" && alvo !== status) return { novoStatus: alvo, divergencia: null };
   return { novoStatus: null, divergencia: null };
 }

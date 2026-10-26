@@ -2,7 +2,7 @@
 // Lógica pura (sem banco, sem tela) para poder ser testada isoladamente.
 import { satNorm, satParseData } from "./satisfacao.js";
 
-export const INAD_STATUS = ["Inadimplente", "Cancelado", "Regularizado"];
+export const INAD_STATUS = ["Inadimplente", "Cancelado", "Regularizado", "Quitado"];
 
 // ── Colunas da planilha ───────────────────────────────────────────────
 
@@ -93,7 +93,8 @@ const txt = v => (v === "" || v == null ? "" : String(v).trim());
 export function inadStatusPlanilha(valor, canceladoFlag) {
   const s = satNorm(valor);
   if (s.startsWith("cancel") || Number(canceladoFlag) === 1) return "Cancelado";
-  if (s.startsWith("regulariz") || s === "pago" || s === "quitado") return "Regularizado";
+  if (s === "quitado") return "Quitado";
+  if (s.startsWith("regulariz") || s === "pago") return "Regularizado";
   if (s.startsWith("inadimpl")) return "Inadimplente";
   return null;
 }
@@ -223,7 +224,7 @@ function situacaoPeloHistorico(reg, hoje) {
     const base = { n, total, faturaId: e.id, vencimento: e.vencimento || null, valorCentavos: e.valorCentavos ?? null,
       ...(e.vencimentoVindi && e.vencimento && e.vencimentoVindi > e.vencimento ? { prorrogadaPara: e.vencimentoVindi } : {}) };
     if (e.situacao === "pagaAtraso") return { ...base, situacao: "pagaAtraso", pagoEm: e.pagoEm, diasAtraso: e.diasAtraso };
-    if (e.situacao === "paga" || e.situacao === "pagaSemData") return { ...base, situacao: "paga", pagoEm: e.pagoEm || null, diasAtraso: e.diasAtraso ?? null };
+    if (e.situacao === "paga" || e.situacao === "pagaSemData") return { ...base, situacao: "paga", pagoEm: e.pagoEm || null, diasAtraso: e.diasAtraso ?? null, ...(e.antecipada ? { antecipada: true } : {}) };
     if (e.situacao === "cancelada") return { ...base, situacao: "vencida", canceladaNaVindi: true };
     if (e.status === "pending" && e.vencimento && e.vencimento < hoje) return { ...base, situacao: "vencida" };
     return { ...base, situacao: "aVencer" };
@@ -341,7 +342,7 @@ export function inadPlanejarImportacao(existentes, lidas, { matchEmployee = () =
     }
 
     // Cancelado/Regularizado definidos no app não são trocados pela planilha.
-    const statusManual = atual.status === "Cancelado" || atual.status === "Regularizado";
+    const statusManual = atual.status === "Cancelado" || atual.status === "Regularizado" || atual.status === "Quitado";
     const status = statusManual ? atual.status : (r.statusPlanilha || atual.status || "Inadimplente");
     if (statusManual && r.statusPlanilha && r.statusPlanilha !== atual.status) resumo.statusPreservado++;
     const responsavelId = atual.responsavelId || matchEmployee(r.colaboradorPlanilha) || null;

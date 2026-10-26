@@ -482,10 +482,18 @@ function RecordRow({ r, employees, tiposMap, togglePrio, togglePesquisa, updateS
 
 // ──────────────────────────────────────────────────────────────────────
 
-const CHANGELOG_VERSION = "1.6.3";
+const CHANGELOG_VERSION = "1.6.4";
 const CHANGELOG_KEY = `changelog_seen_${CHANGELOG_VERSION}`;
 
 const CHANGELOG = [
+  {
+    version: "1.6.4",
+    date: "Out 2026",
+    entries: [
+      { type: "novo", text: "Inadimplentes: novo status Quitado — quando todas as parcelas do contrato estão pagas na Vindi (inclusive quando o cliente antecipa as últimas), o status muda sozinho para Quitado." },
+      { type: "novo", text: "Inadimplentes: parcelas pagas antecipadamente aparecem como \"Paga antecipada\" no histórico financeiro e na dica do quadradinho." },
+    ],
+  },
   {
     version: "1.6.3",
     date: "Out 2026",
@@ -2950,6 +2958,7 @@ const INAD_STATUS_CFG = {
   "Inadimplente": { bar:"#f97316", bg:"#ffedd5", text:"#c2410c", darkBg:"rgba(249,115,22,0.14)",  darkText:"#fb923c", darkBorder:"rgba(249,115,22,0.25)" },
   "Cancelado":    { bar:"#ef4444", bg:"#fee2e2", text:"#b91c1c", darkBg:"rgba(239,68,68,0.14)",   darkText:"#f87171", darkBorder:"rgba(239,68,68,0.25)" },
   "Regularizado": { bar:"#22c55e", bg:"#dcfce7", text:"#15803d", darkBg:"rgba(34,197,94,0.12)",   darkText:"#4ade80", darkBorder:"rgba(34,197,94,0.22)" },
+  "Quitado":      { bar:"#6366f1", bg:"#e0e7ff", text:"#4338ca", darkBg:"rgba(99,102,241,0.14)",  darkText:"#a5b4fc", darkBorder:"rgba(99,102,241,0.28)" },
 };
 const fmtDataBR = iso => iso ? iso.slice(0, 10).split("-").reverse().join("/") : "—";
 const INAD_FKEY = "inad_filters";
@@ -2963,7 +2972,7 @@ function InadStatusBadge({ status }) {
 // Parcelas como "quadradinhos": verde = paga, azul = paga em atraso, laranja = atrasada (vencida e não paga),
 // cinza = ainda não gerada (ou gerada mas ainda não vencida). Ver inadSituacaoParcelas.
 const SITUACAO_PARCELA = {
-  paga:      { cor:"#22c55e", rotulo: p => `paga${p.pagoEm ? " em " + fmtDataBR(p.pagoEm) : ""}` },
+  paga:      { cor:"#22c55e", rotulo: p => `paga${p.antecipada ? " antecipadamente" : ""}${p.pagoEm ? " em " + fmtDataBR(p.pagoEm) : ""}${p.antecipada && p.vencimento ? " (vencimento " + fmtDataBR(p.vencimento) + ")" : ""}` },
   pagaAtraso:{ cor:"#3b82f6", rotulo: p => `paga em atraso · vencimento original ${fmtDataBR(p.vencimento)} · pago em ${fmtDataBR(p.pagoEm)} · ${p.diasAtraso} ${p.diasAtraso === 1 ? "dia" : "dias"} de atraso` },
   vencida:   { cor:"#f97316", rotulo: p => `atrasada (venceu em ${fmtDataBR(p.vencimento)}${p.prorrogadaPara ? "; prorrogada na Vindi para " + fmtDataBR(p.prorrogadaPara) : ""})${p.canceladaNaVindi ? " — em aberto no cancelamento" : ""}` },
   aVencer:   { cor:"#cbd5e1", rotulo: p => `gerada, ${p.vencimento ? "vence em " + fmtDataBR(p.vencimento) : "ainda não vencida"}` },
@@ -3225,6 +3234,7 @@ function InadVindiSecao({ reg, box, titulo }) {
 // Regularizado ou Cancelado. No celular (sem mouse), é aqui que se vê o detalhe de cada quadradinho.
 const SITUACAO_HISTORICO = {
   paga:       ["Paga no prazo",  "#15803d", "#dcfce7"],
+  antecipada: ["Paga antecipada", "#15803d", "#dcfce7"],
   pagaAtraso: ["Paga em atraso", "#1d4ed8", "#dbeafe"],
   vencida:    ["Vencida",        "#b91c1c", "#fee2e2"],
   aVencer:    ["A vencer",       "#475569", "#f1f5f9"],
@@ -3234,7 +3244,7 @@ function InadHistoricoFinanceiro({ reg }) {
   const { t, dark } = useTheme();
   const parcelas = inadSituacaoParcelas(reg, hojeLocal());
   const conta = sit => parcelas.filter(p => p.situacao === sit).length;
-  const resumo = [["no prazo", conta("paga")], ["em atraso", conta("pagaAtraso")], ["vencidas", conta("vencida")], ["a vencer", conta("aVencer")], ["não geradas", conta("naoGerada")]].filter(([, n]) => n);
+  const resumo = [["no prazo", parcelas.filter(p => p.situacao === "paga" && !p.antecipada).length], ["antecipadas", parcelas.filter(p => p.antecipada).length], ["em atraso", conta("pagaAtraso")], ["vencidas", conta("vencida")], ["a vencer", conta("aVencer")], ["não geradas", conta("naoGerada")]].filter(([, n]) => n);
   const td = { padding:"6px 8px", borderBottom:`1px solid ${t.border}` };
   return (
     <details style={{ marginTop:10 }}>
@@ -3251,7 +3261,7 @@ function InadHistoricoFinanceiro({ reg }) {
                 <td style={{ ...td, color:t.text }}>{p.vencimento ? fmtDataBR(p.vencimento) : "—"}{p.prorrogadaPara && <div style={{ fontSize:11, color:t.textMuted }}>prorrogada para {fmtDataBR(p.prorrogadaPara)}</div>}</td>
                 <td style={{ ...td, color:t.text }}>{p.valorCentavos != null ? fmtCentavos(p.valorCentavos) : "—"}</td>
                 <td style={td}>
-                  <span style={{ padding:"2px 8px", borderRadius:20, fontSize:11, fontWeight:700, color:dark?"#e2e8f0":cor, background:dark?"rgba(255,255,255,0.08)":bg, whiteSpace:"nowrap" }}>{p.situacao === "paga" && p.diasAtraso == null ? "Paga" : rot}</span>
+                  <span style={{ padding:"2px 8px", borderRadius:20, fontSize:11, fontWeight:700, color:dark?"#e2e8f0":cor, background:dark?"rgba(255,255,255,0.08)":bg, whiteSpace:"nowrap" }}>{p.situacao === "paga" && p.antecipada ? SITUACAO_HISTORICO.antecipada[0] : p.situacao === "paga" && p.diasAtraso == null ? "Paga" : rot}</span>
                   {p.canceladaNaVindi && <span style={{ marginLeft:6, fontSize:11, color:t.textMuted }}>em aberto no cancelamento</span>}
                 </td>
                 <td style={{ ...td, color:t.textMuted }}>{p.pagoEm ? fmtDataBR(p.pagoEm) : p.situacao === "paga" ? "data não informada" : "—"}</td>
@@ -3612,6 +3622,7 @@ function InadimplentesPanel({ user, isAdmin, employees: empsProp }) {
     ["Inadimplentes",    ativos.length,                                                     "#ea580c"],
     ["Há mais de 1 mês", ativos.filter(r => inadTempo(r.dataInadimplencia, hoje)?.maisDeUmMes).length, "#d97706"],
     ["Regularizados",    regs.filter(r => r.status === "Regularizado").length,              "#16a34a"],
+    ["Quitados",         regs.filter(r => r.status === "Quitado").length,                   "#4f46e5"],
     ["Cancelados",       regs.filter(r => r.status === "Cancelado").length,                 "#dc2626"],
     ["Em aberto",        gcFmtBRL(ativos.reduce((s, r) => s + (r.valorAReceber||0), 0)) || "R$ 0,00", "#dc2626"],
   ];

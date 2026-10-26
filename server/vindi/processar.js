@@ -4,7 +4,7 @@
 import { createHash } from "node:crypto";
 import { FieldValue } from "firebase-admin/firestore";
 import { apurarFaturas, decidirStatus } from "./apuracao.js";
-import { mesclarHistorico, apurarCancelamento, vencimentoDoBoleto, linhaDigitavel } from "./historico.js";
+import { mesclarHistorico, apurarCancelamento, vencimentoDoBoleto, linhaDigitavel, contratoQuitado } from "./historico.js";
 import { ErroVindi } from "./cliente.js";
 
 export const COL_INAD   = "inadimplentes";
@@ -132,7 +132,9 @@ export async function sincronizarRegistro({ db, cliente, registro, origem, event
       const cancelamento = cancelApurado
         ? (jaRegistrado ? vAnt.cancelamento : { ...cancelApurado, detectadoEm: base.em, origem })
         : (vAnt.cancelamento || null);
-      const { novoStatus, divergencia } = decidirStatus({ status: atual.status, statusOrigem: atual.statusOrigem, apuracao: ap, consultaCompleta: true, assinaturaCancelada, cancelamentoJaRegistrado: jaRegistrado });
+      const totalParcelas = Number.isInteger(r.assinatura?.billing_cycles) ? r.assinatura.billing_cycles : (vAnt.totalParcelasVindi ?? null);
+      const quitado = contratoQuitado(historico, totalParcelas);
+      const { novoStatus, divergencia } = decidirStatus({ status: atual.status, statusOrigem: atual.statusOrigem, apuracao: ap, consultaCompleta: true, assinaturaCancelada, cancelamentoJaRegistrado: jaRegistrado, quitado });
       const vindi = {
         ambiente,
         assinaturaId: r.assinatura ? String(r.assinatura.id) : null,
@@ -149,7 +151,8 @@ export async function sincronizarRegistro({ db, cliente, registro, origem, event
         ultimaPaga: ap.ultimaPaga,
         faturas: resumoFaturas(ap.faturas),
         historico,
-        totalParcelasVindi: Number.isInteger(r.assinatura?.billing_cycles) ? r.assinatura.billing_cycles : (vAnt.totalParcelasVindi ?? null),
+        totalParcelasVindi: totalParcelas,
+        contratoQuitado: quitado,
         cancelamento,
         apuracaoConfiavel: ap.confiavel,
         divergencia: divergencia || null,

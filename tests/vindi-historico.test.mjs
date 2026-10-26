@@ -438,3 +438,59 @@ test("importação mantém Cancelado definido pela Vindi", async () => {
   assert.equal(gravar[0].status, "Cancelado");
   assert.equal(gravar[0].statusOrigem, "vindi");
 });
+
+// ── Contrato quitado e parcelas antecipadas (caso Ana Selma, 26/10) ──
+
+// Fatura com período (início) — como a API devolve em bill.period.
+const billP = (id, ciclo, venc, inicio, status = "paid", pagoEm = venc) => ({ ...billC(id, ciclo, venc, status, status === "paid" ? pagoEm : null, "2026-10-20T10:00:00-03:00"), period: { cycle: ciclo, start_at: `${inicio}T00:00:00.000-03:00` } });
+const ANA = { "5001": { id: 5001, status: "active", billing_cycles: 10 } };
+const faturasAna = () => [
+  ...[1, 2, 3, 4, 5, 6, 7].map(n => billP(n, n, `2026-0${n + 2}-11`, `2026-0${n + 2}-03`)), // parcelas 1–7: março a setembro, pagas no dia
+  billP(8, 8, "2026-10-13", "2026-10-03", "paid", "2026-10-19"),
+  billP(9, 9, "2026-10-28", "2026-11-03", "paid", "2026-10-20"),   // antecipada
+  billP(10, 10, "2026-10-28", "2026-12-03", "paid", "2026-10-20"), // antecipada
+];
+
+test("caso Ana Selma: todas as parcelas pagas (2 antecipadas) → Quitado; antecipadas marcadas", async () => {
+  await sinc(await criarInad(), vindiFake({ assinaturas: ANA, faturas: faturasAna() }));
+  const d = await ler();
+  assert.equal(d.status, "Quitado");
+  assert.equal(d.statusOrigem, "vindi");
+  assert.equal(d.vindi.contratoQuitado, true);
+  assert.equal(d.vindi.historico["9"].antecipada, true);
+  assert.equal(d.vindi.historico["10"].antecipada, true);
+  assert.equal(d.vindi.historico["8"].antecipada, undefined);
+  assert.equal(d.vindi.historico["8"].situacao, "pagaAtraso");
+  const q = inadSituacaoParcelas(d, "2026-10-26");
+  assert.equal(q.length, 10);
+  assert.equal(q[9].situacao, "paga");
+  assert.equal(q[9].antecipada, true);
+});
+
+test("Quitado só quando TODAS as parcelas estão pagas; assinatura sem fim definido nunca fica Quitado", async () => {
+  await sinc(await criarInad(), vindiFake({ assinaturas: ANA, faturas: faturasAna().slice(0, 9) }));
+  assert.equal((await ler()).status, "Regularizado", "falta a parcela 10");
+  await limpar();
+  await sinc(await criarInad(), vindiFake({ assinaturas: { "5001": { id: 5001, status: "active", billing_cycles: null } }, faturas: faturasAna() }));
+  assert.equal((await ler()).status, "Regularizado");
+});
+
+test("Regularizado (Vindi) vira Quitado quando paga a última; status manual não muda (só avisa)", async () => {
+  await sinc(await criarInad({ status: "Regularizado", statusOrigem: "vindi" }), vindiFake({ assinaturas: ANA, faturas: faturasAna() }));
+  assert.equal((await ler()).status, "Quitado");
+  await limpar();
+  await sinc(await criarInad({ status: "Inadimplente", statusOrigem: "manual" }), vindiFake({ assinaturas: ANA, faturas: faturasAna() }));
+  const d = await ler();
+  assert.equal(d.status, "Inadimplente");
+  assert.match(d.vindi.divergencia, /definido manualmente como Inadimplente/);
+});
+
+test("importação da planilha não troca Quitado; 'Quitado' na planilha é reconhecido", async () => {
+  await sinc(await criarInad(), vindiFake({ assinaturas: ANA, faturas: faturasAna() }));
+  const linha = { linha: 2, registro: { numero: "", idFatura: "5001", serie: "", nome: "Cliente Teste", email: "c@x.com", statusPlanilha: "Inadimplente", numParcelas: 10, parcelas: [], planilha: {} } };
+  const { gravar } = inadPlanejarImportacao([await atual()], [linha], { agora: "2026-10-26T00:00:00Z" });
+  assert.equal(gravar[0].status, "Quitado");
+  const { inadStatusPlanilha } = await import("../src/inadimplentes.js");
+  assert.equal(inadStatusPlanilha("Quitado"), "Quitado");
+  assert.equal(inadStatusPlanilha("Regularizado"), "Regularizado");
+});

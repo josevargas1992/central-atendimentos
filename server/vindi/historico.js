@@ -97,6 +97,8 @@ export function entradaHistorico(f) {
     id: String(f.id), ciclo: f.ciclo ?? null, vencimento: f.vencimento || null, vencimentoVindi: f.vencimentoVindi || f.vencimento || null, valorCentavos: f.valorCentavos ?? null,
     status: f.status || null, situacao, pagoEm: f.pagoEm || null, diasAtraso, atualizadoFonte: f.atualizadoFonte || null,
     ...(f.transacaoConferida ? { transacaoConferida: f.transacaoConferida } : {}),
+    // Antecipada: paga antes de o período da parcela começar (ex.: cliente adiantou as últimas parcelas).
+    ...(f.status === "paid" && f.pagoEm && f.inicioPeriodo && f.pagoEm < f.inicioPeriodo ? { antecipada: true, inicioPeriodo: f.inicioPeriodo } : {}),
   };
 }
 
@@ -162,4 +164,12 @@ export function apurarCancelamento(assinatura, faturas, { janelaMs = 60 * 60 * 1
     faturas: lista.map(f => String(f.id)),
     confiavel: valoresOk,
   };
+}
+
+// Contrato quitado: total de parcelas conhecido e TODAS as parcelas (ciclos 1..total) com fatura paga.
+export function contratoQuitado(historico, total) {
+  if (!Number.isInteger(total) || total < 1) return false;
+  const pagos = new Set(Object.values(historico || {}).filter(e => e.status === "paid" && Number.isInteger(e.ciclo)).map(e => e.ciclo));
+  for (let n = 1; n <= total; n++) if (!pagos.has(n)) return false;
+  return true;
 }

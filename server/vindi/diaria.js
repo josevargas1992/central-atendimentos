@@ -3,8 +3,10 @@
 // venceu sem pagamento, prorrogação, pagamento anterior ao webhook.
 //
 // • Autenticação: a Vercel envia "Authorization: Bearer <CRON_SECRET>" (variável de ambiente).
-// • O plano gratuito limita a duração de cada função: cada rodada sincroniza por ~40 s e, se faltar
-//   gente, dispara a rodada seguinte (no máximo MAX_RODADAS). Quem já foi tentado HOJE (dia de
+// • Cada rodada sincroniza até o orçamento de tempo (≈270 s em produção) e, se ainda faltar gente,
+//   tenta disparar a rodada seguinte (no máximo MAX_RODADAS). Observado de 27/10 a 03/11/2026: o disparo
+//   da rodada seguinte NÃO acontecia na Vercel (só ~45 clientes por noite) — por isso a rodada longa e o
+//   2º horário (5h), que pega quem sobrou. Quem já foi tentado HOJE (dia de
 //   Brasília) fica de fora — assim nenhuma rodada repete cliente e o laço sempre termina.
 // • As mesmas regras do botão "Atualizar pela Vindi" (sincronizarRegistro), com origem "diaria".
 import { timingSafeEqual } from "node:crypto";

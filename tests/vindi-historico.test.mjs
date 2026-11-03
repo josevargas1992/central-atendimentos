@@ -501,3 +501,16 @@ test("resumo das parcelas (lista e detalhes) segue a Vindi quando há histórico
   const s = inadResumoParcelas(await ler(), "2026-10-26");
   assert.deepEqual(s, { total: 10, pagas: 10, naoPagas: 0, ultimaPaga: 10, comLacuna: false, fonte: "vindi" }, "a planilha dizia 7/10");
 });
+
+test("fila do 'Atualizar todos': recém-importados primeiro, mais antigos depois; pula sem ID e cancelamento registrado", async () => {
+  const { inadFilaVindi } = await import("../src/inadimplentes.js");
+  const regs = [
+    { id: "a", idFatura: "1", vindi: { assinaturaId: "1", ultimaTentativa: "2026-11-02T06:00:00Z" } },
+    { id: "novo", idFatura: "2" },
+    { id: "b", idFatura: "3", vindi: { assinaturaId: "3", ultimaTentativa: "2026-10-30T06:00:00Z" } },
+    { id: "semId", nome: "x" },
+    { id: "canc", status: "Cancelado", idFatura: "4", vindi: { cancelamento: { em: "x" } } },
+    { id: "link", vindiUrl: "https://app.vindi.com.br/customer/bills/9?t=1" },
+  ];
+  assert.deepEqual(inadFilaVindi(regs).map(r => r.id), ["novo", "link", "b", "a"]);
+});

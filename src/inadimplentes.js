@@ -376,3 +376,15 @@ export function inadPlanejarImportacao(existentes, lidas, { matchEmployee = () =
   }
   return { gravar, novosIds, resumo };
 }
+
+// ── Atualização completa pela Vindi (botão "Atualizar todos") ─────────
+
+// Quem entra: tem como chegar na Vindi (assinatura/fatura já vinculada, IDFatura ou link) e não é um
+// cancelamento já registrado (não muda mais). Ordem: nunca sincronizados primeiro (ex.: recém-importados),
+// depois os conferidos há mais tempo.
+export function inadFilaVindi(regs) {
+  return regs
+    .filter(r => r.vindi?.assinaturaId || r.vindi?.faturaAvulsaId || String(r.idFatura || "").trim() || inadVindiValido(r.vindiUrl))
+    .filter(r => !(r.status === "Cancelado" && r.vindi?.cancelamento))
+    .sort((a, b) => (a.vindi?.ultimaTentativa || "").localeCompare(b.vindi?.ultimaTentativa || ""));
+}

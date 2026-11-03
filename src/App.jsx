@@ -6,7 +6,7 @@ import * as store from "./data";
 import { consultarLogike, descreverTesteLogike } from "./logike";
 import { satNorm, satParseData, satAgruparPorMes, satDistribuir } from "./satisfacao";
 import { VERSAO_APP, INTERVALO_CONFERENCIA_MS, versaoPublicada, seguroRecarregar, guardarRetorno, lerRetorno } from "./atualizacao";
-import { INAD_STATUS, inadLerPlanilha, inadResumoParcelas, inadSituacaoParcelas, inadTempo, inadTempoTexto, inadPlanejarImportacao, inadCamposImportacao, inadVindiValido } from "./inadimplentes";
+import { INAD_STATUS, inadLerPlanilha, inadResumoParcelas, inadSituacaoParcelas, inadTempo, inadTempoTexto, inadPlanejarImportacao, inadCamposImportacao, inadVindiValido, inadFilaVindi } from "./inadimplentes";
 import * as XLSX from "xlsx";
 
 // ── Constants ─────────────────────────────────────────────────────────
@@ -483,10 +483,18 @@ function RecordRow({ r, employees, tiposMap, togglePrio, togglePesquisa, updateS
 
 // ──────────────────────────────────────────────────────────────────────
 
-const CHANGELOG_VERSION = "1.6.4";
+const CHANGELOG_VERSION = "1.6.5";
 const CHANGELOG_KEY = `changelog_seen_${CHANGELOG_VERSION}`;
 
 const CHANGELOG = [
+  {
+    version: "1.6.5",
+    date: "Nov 2026",
+    entries: [
+      { type: "correcao", text: "Inadimplentes: a conferência automática com a Vindi de madrugada agora passa por todos os clientes (antes conferia só uma parte por noite)." },
+      { type: "novo",     text: "Administrador: botão \"Atualizar todos pela Vindi\" na aba Inadimplentes — ideal logo depois de importar a planilha." },
+    ],
+  },
   {
     version: "1.6.4",
     date: "Out 2026",
@@ -2266,7 +2274,7 @@ function AdminPanel({ onBack, onGestao }) {
               </div>
             )
           ) : tab === "inadimplentes" ? (
-            <><VindiAdminCard /><InadImportacao employees={employees} /><InadimplentesPanel user={null} isAdmin employees={employees} /></>
+            <><VindiAdminCard /><InadImportacao employees={employees} /><InadAtualizarTodos /><InadimplentesPanel user={null} isAdmin employees={employees} /></>
           ) : tab === "satisfacao" ? (
             <SatisfacaoAdminTab employees={employees} />
           ) : (
@@ -3261,6 +3269,99 @@ function InadParcelasVindi({ reg }) {
     </div>
     <div style={{ marginTop:10, fontSize:11.5, color:t.textMuted }}>Situação conforme a Vindi{reg.vindi?.ultimaSincronizacao ? ` (atualizada em ${fmtDataHora(reg.vindi.ultimaSincronizacao)})` : ""}. Datas: pagamento informado pelo banco; atraso contado do vencimento original.</div>
   </>);
+}
+
+// Botão "Atualizar todos pela Vindi": confere a lista inteira (ex.: toda segunda, depois de importar a planilha).
+// Usa o mesmo endpoint do botão de cada cliente, um por vez, respeitando o limite de chamadas por minuto
+// (o servidor recusa com 429 acima de 40/min — aí espera e tenta de novo). Precisa da aba aberta até o fim.
+const PAUSA_ENTRE_CLIENTES_MS = 1600;
+function InadAtualizarTodos() {
+  const { t, dark } = useTheme();
+  const [est, setEst] = useState(null);   // { fase, total, feitos, ok, mudancas[], erros[], inicio }
+  const cancelar = useRef(false);
+  const espera = ms => new Promise(r => setTimeout(r, ms));
+  const rodando = est?.fase === "rodando";
+
+  const iniciar = async () => {
+    if (rodando) return;
+    cancelar.current = false;
+    setEst({ fase: "preparando" });
+    let regs;
+    try { regs = (await getDocs(collection(db, "inadimplentes"))).docs.map(d => ({ id: d.id, ...d.data() })); }
+    catch { setEst({ fase: "falha", msg: "Não foi possível ler a lista de inadimplentes." }); return; }
+    const fila = inadFilaVindi(regs);
+    const r = { fase: "rodando", total: fila.length, feitos: 0, ok: 0, mudancas: [], erros: [], inicio: Date.now() };
+    setEst({ ...r });
+    for (const reg of fila) {
+      if (cancelar.current) { r.fase = "cancelado"; break; }
+      let resp;
+      for (let tentativa = 1; tentativa <= 6; tentativa++) {
+        resp = await chamarApiVindi("sincronizar", { inadId: reg.id });
+        if (resp.status !== 429) break;
+        await espera(20000);                 // limite por minuto atingido: espera e tenta de novo
+      }
+      r.feitos++;
+      const msg = resp.dados?.mensagem || resp.dados?.erro || "";
+      if (resp.ok) r.ok++;
+      else if (resp.status !== 409) r.erros.push({ nome: reg.nome, msg });   // 409 = acabou de ser atualizado
+      const m = msg.match(/Status alterado para (\w+)/);
+      if (m) r.mudancas.push({ nome: reg.nome, de: reg.status, para: m[1] });
+      setEst({ ...r, mudancas: [...r.mudancas], erros: [...r.erros] });
+      if (!resp.status || resp.status === 503) { r.fase = "falha"; r.msg = msg; break; }   // servidor fora / Vindi não configurada: para em vez de marcar todos com erro
+      await espera(PAUSA_ENTRE_CLIENTES_MS);
+    }
+    if (r.fase === "rodando") r.fase = "fim";
+    setEst({ ...r, mudancas: [...r.mudancas], erros: [...r.erros] });
+  };
+
+  // Avisa antes de fechar a aba no meio da atualização.
+  useEffect(() => {
+    if (!rodando) return;
+    const aviso = e => { e.preventDefault(); e.returnValue = ""; };
+    window.addEventListener("beforeunload", aviso);
+    return () => window.removeEventListener("beforeunload", aviso);
+  }, [rodando]);
+
+  const restante = est?.fase === "rodando" && est.feitos > 0 ? Math.max(1, Math.round((Date.now() - est.inicio) / est.feitos * (est.total - est.feitos) / 60000)) : null;
+  const pct = est?.total ? Math.round(est.feitos / est.total * 100) : 0;
+  return (
+    <div data-modal={rodando ? "1" : undefined} style={{ marginBottom:20, background:t.card, border:`1px solid ${t.border}`, borderRadius:14, padding:"14px 18px" }}>
+      <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", gap:12, flexWrap:"wrap" }}>
+        <div>
+          <div style={{ fontWeight:600, fontSize:14, color:t.text }}>🔄 Atualizar todos pela Vindi</div>
+          <div style={{ fontSize:12, color:t.textMuted, marginTop:2 }}>Confere na Vindi todos os clientes com ID (os recém-importados primeiro). Leva alguns minutos — deixe esta aba aberta até terminar.</div>
+        </div>
+        {rodando
+          ? <button onClick={() => { cancelar.current = true; }} style={{ ...BTN_SEC(t), padding:"8px 16px", fontSize:13 }}>Parar</button>
+          : <button onClick={iniciar} disabled={est?.fase === "preparando"} style={{ background:"#6366f1", color:"#fff", border:"none", borderRadius:9, padding:"9px 18px", fontWeight:700, fontSize:13, cursor:"pointer", opacity:est?.fase === "preparando" ? 0.6 : 1, ...FF }}>{est?.fase === "preparando" ? "Preparando…" : "Atualizar todos"}</button>}
+      </div>
+      {est?.total > 0 && (
+        <div style={{ marginTop:12 }}>
+          <div style={{ height:8, background:dark?"rgba(255,255,255,0.08)":"#e2e8f0", borderRadius:6, overflow:"hidden" }}>
+            <div style={{ width:`${pct}%`, height:"100%", background:"#6366f1", transition:"width 0.3s" }} />
+          </div>
+          <div style={{ fontSize:12.5, color:t.textSub, marginTop:6 }}>
+            {est.fase === "rodando" ? `Atualizando ${est.feitos} de ${est.total}${restante ? ` · cerca de ${restante} min restantes` : ""}…`
+              : est.fase === "fim" ? `✓ Concluído: ${est.ok} de ${est.total} atualizados.`
+              : est.fase === "cancelado" ? `Parado em ${est.feitos} de ${est.total}. Os já atualizados ficam salvos.`
+              : `Interrompido em ${est.feitos} de ${est.total}: ${est.msg || "falha"}`}
+            {est.mudancas.length > 0 && ` · ${est.mudancas.length} mudança(s) de status`}
+            {est.erros.length > 0 && ` · ${est.erros.length} com erro`}
+          </div>
+          {est.fase !== "rodando" && (est.mudancas.length > 0 || est.erros.length > 0) && (
+            <details style={{ marginTop:8 }} open={est.mudancas.length <= 15}>
+              <summary style={{ cursor:"pointer", fontSize:12.5, color:t.textSub, fontWeight:600 }}>Ver detalhes</summary>
+              <div style={{ marginTop:6, fontSize:12.5, color:t.text, maxHeight:220, overflowY:"auto" }}>
+                {est.mudancas.map((m, i) => <div key={"m"+i}>• {m.nome}: {m.de} → <b>{m.para}</b></div>)}
+                {est.erros.map((e, i) => <div key={"e"+i} style={{ color:dark?"#fca5a5":"#b91c1c" }}>• {e.nome}: {e.msg}</div>)}
+              </div>
+            </details>
+          )}
+        </div>
+      )}
+      {est?.fase === "falha" && !est.total && <div style={{ marginTop:8, fontSize:12.5, color:dark?"#fca5a5":"#b91c1c" }}>{est.msg}</div>}
+    </div>
+  );
 }
 
 // Histórico financeiro por parcela (vindi.historico): fica disponível mesmo com o cliente

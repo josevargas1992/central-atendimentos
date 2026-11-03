@@ -1,4 +1,5 @@
-// GET /api/vindi/diaria — sincronização diária automática (Vercel Cron; ver vercel.json).
+// GET /api/vindi/diaria — sincronização diária automática (Vercel Cron às 3h e 5h de Brasília; ver vercel.json).
+// Até 300 s por execução (Fluid Compute): ~270 s de trabalho dão conta de ~250 clientes numa rodada só.
 import { waitUntil } from "@vercel/functions";
 import { getDb } from "../../server/firebaseAdmin.js";
 import { lerConfigVindi } from "../../server/vindi/config.js";
@@ -11,4 +12,5 @@ export default comLimiteDeTempo(criarHandlerDiaria({
   lerConfig: () => lerConfigVindi(),
   criarCliente: cfg => criarClienteVindi({ apiKey: cfg.apiKey, baseUrl: cfg.baseUrl }),
   waitUntil,
-}), 55_000);
+  orcamentoMs: 270_000,
+}), 295_000);
